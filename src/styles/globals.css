@@ -1,0 +1,558 @@
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --font-size: 16px;
+  --background: #eae7e0;
+  --foreground: #535050;
+  --card: #ffffff;
+  --card-foreground: #535050;
+  --popover: #ffffff;
+  --popover-foreground: #535050;
+  --primary: #879656;
+  --primary-foreground: #ffffff;
+  --secondary: #f5f3f0;
+  --secondary-foreground: #535050;
+  --muted: #f0ede6;
+  --muted-foreground: #6b6866;
+  --accent: #879656;
+  --accent-foreground: #ffffff;
+  --destructive: #d4183d;
+  --destructive-foreground: #ffffff;
+  --border: rgba(83, 80, 80, 0.15);
+  --input: transparent;
+  --input-background: rgba(255, 255, 255, 0.7);
+  --switch-background: #c5c2bc;
+  --font-weight-medium: 500;
+  --font-weight-normal: 400;
+  --ring: #879656;
+  --chart-1: #879656;
+  --chart-2: #a8a584;
+  --chart-3: #beb99a;
+  --chart-4: #d4d1b0;
+  --chart-5: #eae7e0;
+  --radius: 0.625rem;
+  --sidebar: #f5f3f0;
+  --sidebar-foreground: #535050;
+  --sidebar-primary: #879656;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f0ede6;
+  --sidebar-accent-foreground: #535050;
+  --sidebar-border: rgba(83, 80, 80, 0.1);
+  --sidebar-ring: #879656;
+}
+
+.dark {
+  --background: #2a2826;
+  --foreground: #eae7e0;
+  --card: #353230;
+  --card-foreground: #eae7e0;
+  --popover: #353230;
+  --popover-foreground: #eae7e0;
+  --primary: #a8a584;
+  --primary-foreground: #2a2826;
+  --secondary: #3f3c39;
+  --secondary-foreground: #eae7e0;
+  --muted: #3f3c39;
+  --muted-foreground: #b8b5af;
+  --accent: #a8a584;
+  --accent-foreground: #2a2826;
+  --destructive: #e85d75;
+  --destructive-foreground: #eae7e0;
+  --border: rgba(234, 231, 224, 0.15);
+  --input: rgba(63, 60, 57, 0.8);
+  --input-background: rgba(63, 60, 57, 0.8);
+  --ring: #a8a584;
+  --font-weight-medium: 500;
+  --font-weight-normal: 400;
+  --chart-1: #a8a584;
+  --chart-2: #879656;
+  --chart-3: #beb99a;
+  --chart-4: #d4d1b0;
+  --chart-5: #eae7e0;
+  --sidebar: #353230;
+  --sidebar-foreground: #eae7e0;
+  --sidebar-primary: #a8a584;
+  --sidebar-primary-foreground: #2a2826;
+  --sidebar-accent: #3f3c39;
+  --sidebar-accent-foreground: #eae7e0;
+  --sidebar-border: rgba(234, 231, 224, 0.1);
+  --sidebar-ring: #a8a584;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-input-background: var(--input-background);
+  --color-switch-background: var(--switch-background);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html,
+  body {
+    @apply bg-background text-foreground;
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+}
+
+/**
+ * Base typography. This is not applied to elements which have an ancestor with a Tailwind text class.
+ */
+@layer base {
+  :where(:not(:has([class*=" text-"]), :not(:has([class^="text-"])))) {
+    h1 {
+      font-size: var(--text-2xl);
+      font-weight: var(--font-weight-medium);
+      line-height: 1.5;
+    }
+
+    h2 {
+      font-size: var(--text-xl);
+      font-weight: var(--font-weight-medium);
+      line-height: 1.5;
+    }
+
+    h3 {
+      font-size: var(--text-lg);
+      font-weight: var(--font-weight-medium);
+      line-height: 1.5;
+    }
+
+    h4 {
+      font-size: var(--text-base);
+      font-weight: var(--font-weight-medium);
+      line-height: 1.5;
+    }
+
+    p {
+      font-size: var(--text-base);
+      font-weight: var(--font-weight-normal);
+      line-height: 1.5;
+    }
+
+    label {
+      font-size: var(--text-base);
+      font-weight: var(--font-weight-medium);
+      line-height: 1.5;
+    }
+
+    button {
+      font-size: var(--text-base);
+      font-weight: var(--font-weight-medium);
+      line-height: 1.5;
+    }
+
+    input {
+      font-size: var(--text-base);
+      font-weight: var(--font-weight-normal);
+      line-height: 1.5;
+    }
+  }
+}
+
+html {
+  font-size: var(--font-size);
+}
+
+/* Mobile-specific improvements */
+@media (max-width: 640px) {
+  html {
+    font-size: 14px;
+  }
+}
+
+/* Login/Signup page responsive transitions */
+@layer utilities {
+  .login-container-mobile {
+    @apply flex flex-col gap-8;
+  }
+  
+  .login-container-desktop {
+    @apply md:grid md:grid-cols-2 md:gap-20;
+  }
+  
+  .login-branding-mobile {
+    @apply text-center;
+  }
+  
+  .login-branding-desktop {
+    @apply md:text-left;
+  }
+  
+  /* Smooth layout transitions */
+  .login-transition {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+/* Browse Page Mobile Improvements */
+@layer utilities {
+  .browse-search-container {
+    @apply w-full;
+  }
+  
+  .browse-controls-mobile {
+    @apply flex flex-wrap items-center gap-2 w-full;
+  }
+}
+
+/* Improve touch targets on mobile */
+@media (hover: none) {
+  .touch-manipulation {
+    touch-action: manipulation;
+  }
+}
+
+/* Ensure minimum touch target size */
+@layer utilities {
+  .min-touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Hide scrollbars on mobile for cleaner look */
+@media (max-width: 768px) {
+  .overflow-y-auto::-webkit-scrollbar {
+    display: none;
+  }
+  
+  .overflow-y-auto {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* Smooth scrolling and touch improvements */
+@layer utilities {
+  .smooth-scroll {
+    scroll-behavior: smooth;
+  }
+  
+  .momentum-scroll {
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .safe-area-inset {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Book details page specific styling */
+.book-details-scroll {
+  scroll-padding-top: 80px;
+}
+
+/* Enhanced touch interactions */
+@media (hover: none) and (pointer: coarse) {
+  .touch-card {
+    transition: transform 0.1s ease-out;
+  }
+  
+  .touch-card:active {
+    transform: scale(0.98);
+  }
+  
+  .touch-button {
+    transition: all 0.1s ease-out;
+  }
+  
+  .touch-button:active {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
+}
+
+/* Line clamp utilities */
+@layer utilities {
+  .line-clamp-1 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+  }
+
+  .line-clamp-2 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .line-clamp-3 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+  }
+}
+
+/* Backdrop blur support */
+@supports (backdrop-filter: blur(10px)) {
+  .backdrop-blur-supported {
+    backdrop-filter: blur(10px);
+  }
+}
+
+/* Pull-to-refresh indication (visual only) */
+.pull-indicator {
+  transform: translateY(-100%);
+  transition: transform 0.3s ease-out;
+}
+
+.pull-indicator.pulling {
+  transform: translateY(0);
+}
+
+/* Modal and Dialog enhancements */
+@layer utilities {
+  .modal-content {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .modal-backdrop {
+    backdrop-filter: blur(8px);
+    background: rgba(0, 0, 0, 0.5);
+  }
+  
+  .modal-card {
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  
+  .modal-enter {
+    animation: modalEnter 0.2s ease-out forwards;
+  }
+  
+  .modal-exit {
+    animation: modalExit 0.15s ease-in forwards;
+  }
+}
+
+/* Admin Panel Fixed Layout Consistency - Exact Numeric Values */
+@layer utilities {
+  /* EXACT SPECIFICATIONS FROM MANAGE BOOKS:
+   * Card Height: 600px (fixed)
+   * Section Height: 800px (fixed)
+   * Nested Tabs Height: 700px (fixed)
+   * Main Wrapper Height: 900px (fixed)
+   * Spacing: 16px (1rem / space-y-4)
+   * Padding: 0px (CardContent)
+   * Corner Radius: 10px (0.625rem)
+   * Gap: 16px
+   * Direction: flex column
+   * Overflow: auto (cards), hidden (sections)
+   */
+  
+  .admin-section-container {
+    min-height: 800px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  
+  .admin-card-fixed {
+    min-height: 600px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 10px;
+  }
+  
+  .admin-card-content {
+    flex: 1;
+    overflow: auto;
+    padding: 0;
+  }
+  
+  .admin-nested-tabs {
+    min-height: 700px;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+  
+  /* Prevent layout shift during tab transitions */
+  .admin-tabs-wrapper {
+    position: relative;
+    min-height: 900px;
+    width: 100%;
+  }
+  
+  /* Header spacing - exact 16px gap */
+  .admin-header-spacing {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  
+  @media (min-width: 640px) {
+    .admin-header-spacing {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+    }
+  }
+  
+  /* Ensure consistent card dimensions */
+  .admin-card-grid {
+    display: grid;
+    gap: 16px;
+    width: 100%;
+  }
+  
+  /* Clip content overflow */
+  .admin-clip-content {
+    overflow: hidden;
+    contain: layout style paint;
+  }
+  
+  /* Fixed dimension enforcement */
+  .admin-fixed-height-600 {
+    height: 600px;
+    min-height: 600px;
+    max-height: 600px;
+  }
+  
+  .admin-fixed-height-700 {
+    height: 700px;
+    min-height: 700px;
+    max-height: 700px;
+  }
+  
+  .admin-fixed-height-800 {
+    height: 800px;
+    min-height: 800px;
+    max-height: 800px;
+  }
+  
+  .admin-fixed-height-900 {
+    height: 900px;
+    min-height: 900px;
+    max-height: 900px;
+  }
+}
+
+/* Accessibility improvements */
+@layer utilities {
+  .focus-visible-ring {
+    @apply focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2;
+  }
+  
+  .admin-button {
+    @apply transition-all duration-200 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1;
+  }
+  
+  .admin-button:hover {
+    @apply brightness-110;
+  }
+  
+  .admin-button:active {
+    @apply scale-95;
+  }
+  
+  /* High contrast mode support */
+  @media (prefers-contrast: high) {
+    .admin-button {
+      border: 2px solid currentColor;
+    }
+  }
+  
+  /* Reduced motion support */
+  @media (prefers-reduced-motion: reduce) {
+    .admin-button {
+      transition: none;
+    }
+    
+    .touch-card,
+    .touch-button {
+      transition: none;
+    }
+  }
+  
+  /* Skip link for keyboard navigation */
+  .skip-link {
+    position: absolute;
+    top: -40px;
+    left: 6px;
+    background: var(--primary);
+    color: var(--primary-foreground);
+    padding: 8px;
+    border-radius: 4px;
+    text-decoration: none;
+    z-index: 100;
+    transition: top 0.3s;
+  }
+  
+  .skip-link:focus {
+    top: 6px;
+  }
+}
+
+@keyframes modalEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes modalExit {
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+  }
+}
+
+/* Smooth scroll for modal content */
+.modal-scroll-area {
+  scroll-padding-top: 1rem;
+  scroll-padding-bottom: 1rem;
+}
