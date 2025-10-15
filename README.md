@@ -1,11 +1,10 @@
 
-  # LitLens
+  # LitLens: Personalized Book Discovery Platform Using AI-Based Collaborative Filtering
 
-  This is a code bundle for LitLens. The original project is available at https://www.figma.com/design/V90BZvUTPnKR553v21Enxm/LitLens.
+  Created by: GROUP 5 - BM4
+  
+  LitLens is a web-based application designed to help readers discover books tailored to their unique interests. By leveraging **AI-based collaborative filtering**, the platform provides personalized book recommendations and a seamless reading community experience.
+  
+  
 
-  ## Running the code
-
-  Run `npm i` to install the dependencies.
-
-  Run `npm run dev` to start the development server.
   
