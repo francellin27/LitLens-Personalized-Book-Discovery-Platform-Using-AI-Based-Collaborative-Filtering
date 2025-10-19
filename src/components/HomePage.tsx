@@ -5,7 +5,8 @@ import { BookGrid } from './BookGrid';
 import { BookCard } from './BookCard';
 import { RecommendationCard } from './RecommendationCard';
 import { RequestBookDialog } from './RequestBookDialog';
-import { FEATURED_BOOKS, MOST_VIEWED_BOOKS, MOST_READ_BOOKS, TOP_RATED_BOOKS, Book, BookRecommendation, MOCK_BOOKS } from '../lib/bookData';
+import { Book, BookRecommendation } from '../lib/bookData';
+import { useBooks } from '../lib/hooks/useSupabaseBooks';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -30,30 +31,45 @@ export function HomePage({ onSearch, onBookSelect, onViewUser }: HomePageProps) 
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Fetch all books from Supabase
+  const { books: allBooks, loading: booksLoading } = useBooks({ limit: 1000 });
+  
+  // Fetch featured books (first 3)
+  const { books: featuredBooks } = useBooks({ limit: 3, sortBy: 'rating', sortOrder: 'desc' });
+  
+  // Fetch most viewed books
+  const { books: mostViewedBooks } = useBooks({ limit: 10, sortBy: 'read_count', sortOrder: 'desc' });
+  
+  // Fetch most read books  
+  const { books: mostReadBooks } = useBooks({ limit: 10, sortBy: 'read_count', sortOrder: 'desc' });
+  
+  // Fetch top rated books
+  const { books: topRatedBooks } = useBooks({ limit: 10, sortBy: 'rating', sortOrder: 'desc' });
+
   // Search suggestions
   const searchSuggestions = useMemo(() => {
-    if (!searchQuery.trim()) return [];
+    if (!searchQuery.trim() || booksLoading) return [];
     
-    return MOCK_BOOKS.filter((book) => {
+    return allBooks.filter((book) => {
       const query = searchQuery.toLowerCase();
       return book.title.toLowerCase().includes(query) ||
              book.author.toLowerCase().includes(query) ||
              book.genre.some(g => g.toLowerCase().includes(query));
     }).slice(0, 8); // Limit to 8 suggestions
-  }, [searchQuery]);
+  }, [searchQuery, allBooks, booksLoading]);
 
   // Filtered search results (when search is active)
   const searchResults = useMemo(() => {
-    if (!activeSearchQuery.trim()) return [];
+    if (!activeSearchQuery.trim() || booksLoading) return [];
     
-    return MOCK_BOOKS.filter((book) => {
+    return allBooks.filter((book) => {
       const query = activeSearchQuery.toLowerCase();
       return book.title.toLowerCase().includes(query) ||
              book.author.toLowerCase().includes(query) ||
              book.genre.some(g => g.toLowerCase().includes(query)) ||
              book.description.toLowerCase().includes(query);
     });
-  }, [activeSearchQuery]);
+  }, [activeSearchQuery, allBooks, booksLoading]);
 
   // Handle clicks outside to close suggestions
   useEffect(() => {
@@ -132,15 +148,19 @@ export function HomePage({ onSearch, onBookSelect, onViewUser }: HomePageProps) 
 
   // Personalized recommendations based on user preferences and reading history
   const getPersonalizedRecommendations = (): BookRecommendation[] => {
+    if (booksLoading || allBooks.length === 0) {
+      return [];
+    }
+
     if (!user?.preferences?.readBooks?.length) {
       // If user hasn't read any books, show featured books without reasons
-      return FEATURED_BOOKS.slice(0, 4).map(book => ({
+      return featuredBooks.slice(0, 4).map(book => ({
         book,
         reason: "Popular among new readers"
       }));
     }
 
-    const readBooks = MOCK_BOOKS.filter(book => 
+    const readBooks = allBooks.filter(book => 
       user.preferences!.readBooks!.includes(book.id)
     );
     
@@ -150,7 +170,7 @@ export function HomePage({ onSearch, onBookSelect, onViewUser }: HomePageProps) 
     // Genre-based recommendations
     if (user?.preferences?.favoriteGenres?.length) {
       for (const readBook of readBooks) {
-        const similarBooks = MOCK_BOOKS.filter(book => 
+        const similarBooks = allBooks.filter(book => 
           book.genre === readBook.genre && 
           !usedBookIds.has(book.id) &&
           !recommendations.some(rec => rec.book.id === book.id)
@@ -168,7 +188,7 @@ export function HomePage({ onSearch, onBookSelect, onViewUser }: HomePageProps) 
 
     // Author-based recommendations  
     for (const readBook of readBooks) {
-      const sameAuthorBooks = MOCK_BOOKS.filter(book => 
+      const sameAuthorBooks = allBooks.filter(book => 
         book.author === readBook.author && 
         !usedBookIds.has(book.id) &&
         !recommendations.some(rec => rec.book.id === book.id)
@@ -186,7 +206,7 @@ export function HomePage({ onSearch, onBookSelect, onViewUser }: HomePageProps) 
     // Fill remaining slots with highly rated books in favorite genres
     if (recommendations.length < 4) {
       const remainingSlots = 4 - recommendations.length;
-      const topRatedInGenres = MOCK_BOOKS.filter(book =>
+      const topRatedInGenres = allBooks.filter(book =>
         user.preferences!.favoriteGenres!.includes(book.genre) &&
         !usedBookIds.has(book.id) &&
         !recommendations.some(rec => rec.book.id === book.id)
@@ -458,15 +478,15 @@ export function HomePage({ onSearch, onBookSelect, onViewUser }: HomePageProps) 
           </TabsList>
           
           <TabsContent value="most-viewed" className="mt-6">
-            <BookGrid books={MOST_VIEWED_BOOKS.slice(0, 8)} onBookClick={handleBookClick} />
+            <BookGrid books={mostViewedBooks.slice(0, 8)} onBookClick={handleBookClick} />
           </TabsContent>
           
           <TabsContent value="most-read" className="mt-6">
-            <BookGrid books={MOST_READ_BOOKS.slice(0, 8)} onBookClick={handleBookClick} />
+            <BookGrid books={mostReadBooks.slice(0, 8)} onBookClick={handleBookClick} />
           </TabsContent>
           
           <TabsContent value="top-rated" className="mt-6">
-            <BookGrid books={TOP_RATED_BOOKS.slice(0, 8)} onBookClick={handleBookClick} />
+            <BookGrid books={topRatedBooks.slice(0, 8)} onBookClick={handleBookClick} />
           </TabsContent>
         </Tabs>
       </section>

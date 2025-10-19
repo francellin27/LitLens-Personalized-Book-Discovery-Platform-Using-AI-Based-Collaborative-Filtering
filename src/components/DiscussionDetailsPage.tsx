@@ -1,29 +1,33 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { Separator } from "./ui/separator";
 import { Textarea } from "./ui/textarea";
-import { Input } from "./ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
-import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import { Label } from "./ui/label";
-import { Book, bookData } from "../lib/bookData";
+import { Book } from "../lib/bookData";
 import { toast } from "sonner@2.0.3";
+import { useAuth } from "../lib/auth-supabase";
+import {
+  fetchDiscussionById,
+  fetchDiscussionReplies,
+  createDiscussionReply,
+  type Discussion,
+  type DiscussionReply as SupabaseDiscussionReply
+} from "../lib/supabase-services";
 import { 
   ArrowLeft,
   MessageSquare, 
   Heart, 
   Share,
-  MoreHorizontal,
   ThumbsUp,
-  ThumbsDown,
-  Reply,
   Flag,
   Clock,
-  User,
-  BookOpen,
+  Bookmark,
+  MoreHorizontal,
+  Send,
   Zap,
   Shield,
   AlertTriangle,
@@ -39,79 +43,64 @@ interface DiscussionDetailsPageProps {
   onViewUser: (userId: string) => void;
 }
 
-interface Reply {
-  id: string;
-  author: string;
-  authorAvatar: string;
-  content: string;
-  timestamp: string;
-  likes: number;
-  isLiked: boolean;
-  replies?: Reply[];
-}
-
-interface DiscussionDetails {
-  id: string;
-  title: string;
-  author: string;
-  authorAvatar: string;
-  bookTitle: string;
-  bookCover: string;
-  content: string;
-  timestamp: string;
-  category: string;
-  likes: number;
-  isLiked: boolean;
-  replies: Reply[];
-  totalReplies: number;
-  isPopular?: boolean;
-}
-
 export function DiscussionDetailsPage({ 
   discussionId, 
   onBack, 
   onBookSelect, 
   onViewUser 
 }: DiscussionDetailsPageProps) {
+  const { user } = useAuth();
+  const [discussion, setDiscussion] = useState<Discussion | null>(null);
+  const [replies, setReplies] = useState<SupabaseDiscussionReply[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [newReply, setNewReply] = useState("");
-  const [replyingTo, setReplyingTo] = useState<string | null>(null);
-  const [discussionLikes, setDiscussionLikes] = useState(24);
   const [isDiscussionLiked, setIsDiscussionLiked] = useState(false);
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
   const [reportType, setReportType] = useState<"discussion" | "reply">("discussion");
   const [reportedItemId, setReportedItemId] = useState<string>("");
   const [reportReason, setReportReason] = useState("");
   const [reportDescription, setReportDescription] = useState("");
-  const [replyLikes, setReplyLikes] = useState<Record<string, { likes: number; isLiked: boolean }>>({
-    "1": { likes: 12, isLiked: true },
-    "2": { likes: 8, isLiked: false },
-    "3": { likes: 15, isLiked: false },
-    "4": { likes: 3, isLiked: false },
-    "5": { likes: 7, isLiked: true }
-  });
+
+  // Load discussion and replies
+  useEffect(() => {
+    loadDiscussion();
+  }, [discussionId]);
+
+  const loadDiscussion = async () => {
+    setIsLoading(true);
+    try {
+      const [discussionData, repliesData] = await Promise.all([
+        fetchDiscussionById(discussionId),
+        fetchDiscussionReplies(discussionId)
+      ]);
+
+      if (discussionData) {
+        setDiscussion(discussionData);
+      } else {
+        toast.error("Discussion not found");
+        onBack();
+      }
+
+      setReplies(repliesData);
+    } catch (error) {
+      console.error("Error loading discussion:", error);
+      toast.error("Failed to load discussion");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Handle interactions
   const handleLikeDiscussion = () => {
+    // TODO: Implement like functionality with Supabase
     const newLikedState = !isDiscussionLiked;
     setIsDiscussionLiked(newLikedState);
-    setDiscussionLikes(prev => newLikedState ? prev + 1 : prev - 1);
-    
     toast.success(newLikedState ? "Discussion liked!" : "Discussion unliked");
   };
 
   const handleLikeReply = (replyId: string) => {
-    const currentState = replyLikes[replyId];
-    const newLikedState = !currentState?.isLiked;
-    
-    setReplyLikes(prev => ({
-      ...prev,
-      [replyId]: {
-        likes: newLikedState ? (currentState?.likes || 0) + 1 : (currentState?.likes || 0) - 1,
-        isLiked: newLikedState
-      }
-    }));
-    
-    toast.success(newLikedState ? "Reply liked!" : "Reply unliked");
+    // TODO: Implement like functionality with Supabase
+    toast.success("Reply liked!");
   };
 
   const handleShare = async () => {
@@ -153,140 +142,158 @@ export function DiscussionDetailsPage({
     setReportDescription("");
   };
 
-  // Mock discussion details data
-  const discussion: DiscussionDetails = {
-    id: discussionId,
-    title: "What are your thoughts on the ending of 'The Midnight Library'?",
-    author: "Sarah Johnson",
-    authorAvatar: "https://images.unsplash.com/photo-1494790108755-2616b612b11c?w=150",
-    bookTitle: "The Midnight Library",
-    bookCover: bookData[0].cover,
-    content: "I just finished reading The Midnight Library and I'm still processing the ending. The concept of parallel lives and the library between life and death was fascinating, but I found myself questioning whether Nora's final choice was realistic. What did everyone else think about her journey and the resolution? Did it feel satisfying to you?",
-    timestamp: "2 hours ago",
-    category: "Book Discussion",
-    likes: discussionLikes,
-    isLiked: isDiscussionLiked,
-    totalReplies: 18,
-    replies: [
-      {
-        id: "1",
-        author: "Alex Turner",
-        authorAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150",
-        content: "I absolutely loved the ending! I think it was realistic because Nora finally learned to appreciate her actual life instead of always wondering 'what if'. The message about finding meaning in our current circumstances really resonated with me.",
-        timestamp: "1 hour ago",
-        likes: 12,
-        isLiked: true
-      },
-      {
-        id: "2", 
-        author: "Emma Wilson",
-        authorAvatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150",
-        content: "I had mixed feelings about it. While I appreciated the philosophical message, I felt like some of the parallel lives could have been explored more deeply. The ending felt a bit rushed to me, though I understand the author's intent.",
-        timestamp: "45 minutes ago",
-        likes: 8,
-        isLiked: false
-      },
-      {
-        id: "3",
-        author: "Michael Chen", 
-        authorAvatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150",
-        content: "The ending made me cry! I think it was perfect because it showed that every life has value, even the one we think is 'ordinary'. Nora's realization that her root life was worth living was beautifully written.",
-        timestamp: "30 minutes ago",
-        likes: 15,
-        isLiked: false
-      }
-    ],
-    isPopular: true
-  };
+  const handleSubmitReply = async () => {
+    if (!newReply.trim() || !user || !discussion) {
+      toast.error("Please enter a reply");
+      return;
+    }
 
-  const handleSubmitReply = () => {
-    if (newReply.trim()) {
-      // TODO: Submit reply to backend
-      console.log('Submitting reply:', newReply);
-      setNewReply("");
-      setReplyingTo(null);
+    try {
+      const reply = await createDiscussionReply(discussionId, user.id, newReply);
+      if (reply) {
+        toast.success("Reply posted successfully!");
+        setNewReply("");
+        // Reload replies
+        await loadDiscussion();
+      } else {
+        toast.error("Failed to post reply");
+      }
+    } catch (error) {
+      console.error("Error posting reply:", error);
+      toast.error("Failed to post reply");
     }
   };
 
-  return (
-    <div className="space-y-6">
-      {/* Header with back button */}
-      <div className="flex items-center gap-4">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onBack}
-          className="gap-2"
-        >
-          <ArrowLeft className="h-4 w-4" />
+  // Calculate time ago
+  const getTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (seconds < 60) return 'just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
+    if (seconds < 604800) return `${Math.floor(seconds / 86400)} days ago`;
+    return `${Math.floor(seconds / 604800)} weeks ago`;
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center space-y-3">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+          <p className="text-muted-foreground">Loading discussion...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!discussion) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
+        <p className="text-muted-foreground">Discussion not found</p>
+        <Button onClick={onBack} variant="outline">
+          <ArrowLeft className="h-4 w-4 mr-2" />
           Back to Community
         </Button>
-        <Badge variant="outline">{discussion.category}</Badge>
-        {discussion.isPopular && (
-          <Badge variant="secondary" className="gap-1">
-            <MessageSquare className="h-3 w-3" />
-            Popular
-          </Badge>
-        )}
       </div>
+    );
+  }
 
-      {/* Main Discussion */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-start gap-4">
-            {/* Book Cover */}
-            <button
-              onClick={() => {
-                // TODO: Find and pass the actual book object
-                console.log('Opening book details for:', discussion.bookTitle);
-              }}
-              className="flex-shrink-0 hover:opacity-80 transition-opacity"
-            >
+  return (
+    <div className="w-full bg-background">
+      {/* Hero Section with Book Cover Background */}
+      <div className="relative w-full bg-gradient-to-b from-primary/5 via-background to-background border-b">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+          {/* Back Button */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onBack}
+            className="gap-2 mb-6 hover:bg-primary/10"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Community
+          </Button>
+
+          {/* Category & Popular Badge */}
+          <div className="flex items-center gap-3 mb-6">
+            <Badge variant="outline" className="text-sm px-3 py-1">
+              {discussion.category}
+            </Badge>
+            {discussion.replyCount >= 20 && (
+              <Badge variant="secondary" className="gap-1.5 px-3 py-1">
+                <MessageSquare className="h-3.5 w-3.5" />
+                Popular Discussion
+              </Badge>
+            )}
+          </div>
+
+          {/* Discussion Title */}
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-6 leading-tight">
+            {discussion.title}
+          </h1>
+
+          {/* Book Info Banner (if linked to a book) */}
+          {discussion.bookTitle && discussion.bookCover && (
+            <div className="flex items-center gap-4 p-4 rounded-lg bg-card border mb-6 hover:shadow-md transition-shadow">
               <img
                 src={discussion.bookCover}
-                alt={`Cover of ${discussion.bookTitle}`}
-                className="w-28 h-40 md:w-24 md:h-32 object-cover rounded shadow-sm"
+                alt={discussion.bookTitle}
+                className="w-16 h-24 object-cover rounded shadow-sm flex-shrink-0"
               />
-            </button>
-
-            <div className="flex-1 space-y-2">
-              <div className="flex items-start justify-between">
-                <div className="space-y-1">
-                  <CardTitle className="text-xl">{discussion.title}</CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    About: <span className="text-foreground font-medium">{discussion.bookTitle}</span>
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                <button
-                  className="flex items-center gap-2 hover:text-primary transition-colors"
-                  onClick={() => onViewUser(discussion.author)}
-                >
-                  <Avatar className="w-6 h-6">
-                    <AvatarImage src={discussion.authorAvatar} />
-                    <AvatarFallback>{discussion.author[0]}</AvatarFallback>
-                  </Avatar>
-                  <span>{discussion.author}</span>
-                </button>
-                <div className="flex items-center gap-1">
-                  <Clock className="h-4 w-4" />
-                  <span>{discussion.timestamp}</span>
-                </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-muted-foreground mb-1">Discussing</p>
+                <p className="font-medium text-lg line-clamp-2">{discussion.bookTitle}</p>
               </div>
             </div>
+          )}
+
+          {/* Author Info & Meta */}
+          <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+            <button
+              onClick={() => onViewUser(discussion.userId)}
+              className="flex items-center gap-3 group"
+            >
+              <Avatar className="w-12 h-12 ring-2 ring-background shadow-sm">
+                <AvatarImage src={discussion.userAvatar} />
+                <AvatarFallback>{discussion.userName[0]}</AvatarFallback>
+              </Avatar>
+              <div className="text-left">
+                <p className="font-medium group-hover:text-primary transition-colors">
+                  {discussion.userName}
+                </p>
+                <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5" />
+                  {getTimeAgo(discussion.createdAt)}
+                </p>
+              </div>
+            </button>
+
+            <Separator orientation="vertical" className="h-10 hidden sm:block" />
+
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <MessageSquare className="h-4 w-4" />
+              <span>{discussion.replyCount} {discussion.replyCount === 1 ? 'reply' : 'replies'}</span>
+            </div>
           </div>
-        </CardHeader>
+        </div>
+      </div>
 
-        <CardContent className="space-y-4">
-          <p className="text-foreground leading-relaxed">{discussion.content}</p>
-          
-          <Separator />
+      {/* Main Content Area */}
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
+          {/* Main Content Column */}
+          <div className="lg:col-span-8 space-y-8">
+            {/* Discussion Content */}
+            <div className="prose prose-lg dark:prose-invert max-w-none">
+              <p className="text-lg leading-relaxed whitespace-pre-wrap">
+                {discussion.content}
+              </p>
+            </div>
 
-          {/* Discussion Actions */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+            {/* Action Buttons */}
+            <div className="flex items-center gap-3 py-6 border-y">
               <Button
                 variant="ghost"
                 size="sm"
@@ -294,11 +301,7 @@ export function DiscussionDetailsPage({
                 className={`gap-2 ${isDiscussionLiked ? 'text-red-600 hover:text-red-700' : ''}`}
               >
                 <Heart className={`h-4 w-4 ${isDiscussionLiked ? 'fill-current' : ''}`} />
-                <span>{discussionLikes}</span>
-              </Button>
-              <Button variant="ghost" size="sm" className="gap-2">
-                <MessageSquare className="h-4 w-4" />
-                <span>{discussion.totalReplies} replies</span>
+                Like
               </Button>
               <Button 
                 variant="ghost" 
@@ -309,131 +312,200 @@ export function DiscussionDetailsPage({
                 <Share className="h-4 w-4" />
                 Share
               </Button>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="gap-2"
+              >
+                <Bookmark className="h-4 w-4" />
+                Save
+              </Button>
+              <div className="flex-1"></div>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="gap-2 text-muted-foreground hover:text-destructive"
+                onClick={() => handleReport()}
+              >
+                <Flag className="h-4 w-4" />
+                Report
+              </Button>
             </div>
-            
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="gap-2 text-muted-foreground hover:text-destructive"
-              onClick={() => handleReport()}
-            >
-              <Flag className="h-4 w-4" />
-              Report
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* Replies */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-medium">Replies ({discussion.replies.length})</h3>
-        
-        {discussion.replies.map((reply) => (
-          <Card key={reply.id}>
-            <CardContent className="p-4">
-              <div className="space-y-3">
-                <div className="flex items-start justify-between">
-                  <button
-                    className="flex items-center gap-3 hover:opacity-80 transition-opacity"
-                    onClick={() => onViewUser(reply.author)}
-                  >
-                    <Avatar className="w-8 h-8">
-                      <AvatarImage src={reply.authorAvatar} />
-                      <AvatarFallback>{reply.author[0]}</AvatarFallback>
-                    </Avatar>
-                    <div className="text-left">
-                      <p className="font-medium text-sm">{reply.author}</p>
-                      <p className="text-xs text-muted-foreground">{reply.timestamp}</p>
+            {/* Replies Section */}
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold">
+                  {replies.length} {replies.length === 1 ? 'Reply' : 'Replies'}
+                </h2>
+              </div>
+
+              {/* Reply Input */}
+              {user && (
+                <Card className="border-2 border-primary/20">
+                  <CardContent className="p-6">
+                    <div className="flex gap-4">
+                      <Avatar className="w-10 h-10 flex-shrink-0">
+                        <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`} />
+                        <AvatarFallback>{user.name[0]}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 space-y-3">
+                        <Textarea
+                          placeholder="Share your thoughts on this discussion..."
+                          value={newReply}
+                          onChange={(e) => setNewReply(e.target.value)}
+                          className="min-h-[100px] resize-none"
+                        />
+                        <div className="flex justify-between items-center">
+                          <p className="text-xs text-muted-foreground">
+                            Be respectful and constructive
+                          </p>
+                          <Button 
+                            onClick={handleSubmitReply} 
+                            disabled={!newReply.trim()}
+                            className="gap-2"
+                          >
+                            <Send className="h-4 w-4" />
+                            Post Reply
+                          </Button>
+                        </div>
+                      </div>
                     </div>
-                  </button>
-                </div>
+                  </CardContent>
+                </Card>
+              )}
 
-                <p className="text-sm leading-relaxed pl-11">{reply.content}</p>
+              {/* Replies List */}
+              <div className="space-y-4">
+                {replies.length === 0 ? (
+                  <Card>
+                    <CardContent className="p-12 text-center">
+                      <MessageSquare className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                      <p className="text-muted-foreground text-lg mb-2">No replies yet</p>
+                      <p className="text-sm text-muted-foreground">Be the first to share your thoughts!</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  replies.map((reply) => (
+                    <Card key={reply.id} className="hover:shadow-md transition-shadow">
+                      <CardContent className="p-6">
+                        <div className="flex gap-4">
+                          <button
+                            onClick={() => onViewUser(reply.userId)}
+                            className="flex-shrink-0"
+                          >
+                            <Avatar className="w-10 h-10 ring-2 ring-background">
+                              <AvatarImage src={reply.userAvatar} />
+                              <AvatarFallback>{reply.userName[0]}</AvatarFallback>
+                            </Avatar>
+                          </button>
+                          
+                          <div className="flex-1 min-w-0 space-y-3">
+                            <div className="flex items-start justify-between gap-4">
+                              <button
+                                onClick={() => onViewUser(reply.userId)}
+                                className="hover:underline"
+                              >
+                                <p className="font-medium">{reply.userName}</p>
+                              </button>
+                              <p className="text-sm text-muted-foreground flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                {getTimeAgo(reply.createdAt)}
+                              </p>
+                            </div>
 
-                <div className="flex items-center gap-2 pl-11">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleLikeReply(reply.id)}
-                    className={`gap-1 text-xs ${replyLikes[reply.id]?.isLiked ? 'text-red-600 hover:text-red-700' : ''}`}
-                  >
-                    <ThumbsUp className={`h-3 w-3 ${replyLikes[reply.id]?.isLiked ? 'fill-current' : ''}`} />
-                    <span>{replyLikes[reply.id]?.likes || reply.likes}</span>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setReplyingTo(reply.id)}
-                    className="gap-1 text-xs"
-                  >
-                    <Reply className="h-3 w-3" />
-                    Reply
-                  </Button>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="gap-1 text-xs"
-                    onClick={() => handleReport(reply.id)}
-                  >
-                    <Flag className="h-3 w-3" />
-                    Report
-                  </Button>
-                </div>
+                            <p className="text-base leading-relaxed whitespace-pre-wrap">
+                              {reply.content}
+                            </p>
 
-                {/* Reply to reply form */}
-                {replyingTo === reply.id && (
-                  <div className="pl-11 pt-2 space-y-2">
-                    <Textarea
-                      placeholder={`Reply to ${reply.author}...`}
-                      className="min-h-[80px]"
-                    />
-                    <div className="flex gap-2">
-                      <Button size="sm">Reply</Button>
-                      <Button 
-                        size="sm" 
-                        variant="ghost" 
-                        onClick={() => setReplyingTo(null)}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
+                            <div className="flex items-center gap-2 pt-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleLikeReply(reply.id)}
+                                className="gap-1.5 h-8 px-3"
+                              >
+                                <ThumbsUp className="h-3.5 w-3.5" />
+                                Like
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="gap-1.5 h-8 px-3 text-muted-foreground hover:text-destructive"
+                                onClick={() => handleReport(reply.id)}
+                              >
+                                <Flag className="h-3.5 w-3.5" />
+                                Report
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
                 )}
               </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* Load More Replies */}
-      <div className="text-center">
-        <Button variant="outline">
-          Load More Replies
-        </Button>
-      </div>
-
-      {/* Reply Form */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Join the Discussion</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Textarea
-            placeholder="Share your thoughts on this discussion..."
-            value={newReply}
-            onChange={(e) => setNewReply(e.target.value)}
-            className="min-h-[100px]"
-          />
-          <div className="flex justify-between items-center">
-            <p className="text-sm text-muted-foreground">
-              Be respectful and constructive in your responses
-            </p>
-            <Button onClick={handleSubmitReply} disabled={!newReply.trim()}>
-              Post Reply
-            </Button>
+            </div>
           </div>
-        </CardContent>
-      </Card>
+
+          {/* Sidebar Column */}
+          <div className="lg:col-span-4 space-y-6">
+            {/* About this Discussion */}
+            <Card className="sticky top-6">
+              <CardHeader>
+                <CardTitle className="text-lg">About this Discussion</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">Category</p>
+                  <Badge variant="outline" className="text-sm">
+                    {discussion.category}
+                  </Badge>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">Created</p>
+                  <p className="text-sm font-medium">{getTimeAgo(discussion.createdAt)}</p>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">Activity</p>
+                  <div className="space-y-1 text-sm">
+                    <p>{discussion.replyCount} {discussion.replyCount === 1 ? 'reply' : 'replies'}</p>
+                  </div>
+                </div>
+
+                {discussion.replyCount >= 20 && (
+                  <>
+                    <Separator />
+                    <div className="flex items-center gap-2 text-sm text-primary">
+                      <MessageSquare className="h-4 w-4" />
+                      <span className="font-medium">Popular Discussion</span>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Community Guidelines */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Community Guidelines</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                <p>• Be respectful and kind to others</p>
+                <p>• Stay on topic and relevant</p>
+                <p>• No spam or self-promotion</p>
+                <p>• Respect others' opinions</p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
 
       {/* Report Dialog */}
       <Dialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen}>

@@ -4,8 +4,11 @@ import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Heart, BookOpen, X } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
+import { useAuth } from '../lib/auth-supabase';
+import { getUserBookStatus, setUserBookStatus, removeUserBookStatus } from '../lib/supabase-services';
+import { toast } from 'sonner@2.0.3';
 
 interface BookCardProps {
   book: Book;
@@ -26,11 +29,85 @@ export function BookCard({
   showRemoveButton = false,
   onRemoveBook 
 }: BookCardProps) {
+  const { user } = useAuth();
   const [isFavorited, setIsFavorited] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState(false);
 
-  const handleFavoriteClick = (e: React.MouseEvent) => {
+  // Load user's favorite status from Supabase
+  useEffect(() => {
+    async function loadFavoriteStatus() {
+      if (!user?.id || !book?.id) return;
+
+      // Check if book ID is a valid UUID (from database) or numeric ID (from mock data)
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(book.id);
+      
+      if (!isUUID) {
+        // This is mock data, skip loading from database
+        return;
+      }
+
+      setLoadingStatus(true);
+      try {
+        const status = await getUserBookStatus(user.id, book.id);
+        setIsFavorited(status.isFavorite || false);
+      } catch (error) {
+        console.error('Error loading favorite status:', error);
+      } finally {
+        setLoadingStatus(false);
+      }
+    }
+
+    loadFavoriteStatus();
+  }, [user?.id, book?.id]);
+
+  const handleFavoriteClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    setIsFavorited(!isFavorited);
+    
+    if (!user?.id) {
+      toast.error('Please log in to add favorites');
+      return;
+    }
+
+    if (!book?.id) {
+      toast.error('Invalid book');
+      return;
+    }
+
+    // Check if book ID is a valid UUID (from database) or numeric ID (from mock data)
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(book.id);
+
+    const newFavoriteState = !isFavorited;
+    setIsFavorited(newFavoriteState);
+    
+    if (!isUUID) {
+      // This is mock data, just show local feedback
+      toast.success(newFavoriteState ? 'Added to favorites' : 'Removed from favorites');
+      return;
+    }
+    
+    try {
+      if (newFavoriteState) {
+        const success = await setUserBookStatus(user.id, book.id, 'favorite');
+        if (success) {
+          toast.success('Added to favorites');
+        } else {
+          setIsFavorited(false);
+          toast.error('Failed to add to favorites');
+        }
+      } else {
+        const success = await removeUserBookStatus(user.id, book.id, 'favorite');
+        if (success) {
+          toast.success('Removed from favorites');
+        } else {
+          setIsFavorited(true);
+          toast.error('Failed to remove from favorites');
+        }
+      }
+    } catch (error) {
+      console.error('Error updating favorites:', error);
+      setIsFavorited(!newFavoriteState);
+      toast.error('An error occurred');
+    }
   };
 
   const handleRemoveClick = (e: React.MouseEvent) => {

@@ -7,6 +7,7 @@ import { Separator } from './ui/separator';
 import { ScrollArea } from './ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Textarea } from './ui/textarea';
+import { Input } from './ui/input';
 import { Calendar } from './ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from './ui/carousel';
@@ -38,7 +39,8 @@ import { useState, useEffect } from 'react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { toast } from 'sonner@2.0.3';
 import { useAuth } from '../lib/auth-supabase';
-import { getUserBookStatus, setUserBookStatus, removeUserBookStatus } from '../lib/supabase-services';
+import { getUserBookStatus, setUserBookStatus, removeUserBookStatus, logReadingDates, createReview, fetchReviewsForBook } from '../lib/supabase-services';
+import { handleLogBookWithSupabase } from '../lib/bookModalHandlers';
 
 interface BookModalProps {
   book: Book | null;
@@ -155,6 +157,7 @@ export function BookModal({ book, isOpen, onClose, onViewUser, onBookSelect }: B
   const [showFullDescription, setShowFullDescription] = useState(false);
   const [showAllReviews, setShowAllReviews] = useState(false);
   const [userComment, setUserComment] = useState('');
+  const [reviewTitle, setReviewTitle] = useState('');
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [showLogBookDialog, setShowLogBookDialog] = useState(false);
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
@@ -167,6 +170,8 @@ export function BookModal({ book, isOpen, onClose, onViewUser, onBookSelect }: B
   const [reportDescription, setReportDescription] = useState('');
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const [reviewFilter, setReviewFilter] = useState<string>('all');
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [loadingReviews, setLoadingReviews] = useState(false);
 
   // Helper function to check if book ID is a valid UUID
   const isValidBookId = (id: string): boolean => {
@@ -205,6 +210,39 @@ export function BookModal({ book, isOpen, onClose, onViewUser, onBookSelect }: B
 
     loadBookStatus();
   }, [user?.id, book?.id]);
+
+  // Load reviews from Supabase
+  useEffect(() => {
+    async function loadReviews() {
+      if (!book?.id) {
+        setReviews([]);
+        return;
+      }
+
+      // Check if book ID is a valid UUID (from database) or numeric ID (from mock data)
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(book.id);
+      
+      if (!isUUID) {
+        // This is mock data, use the reviews from the book object
+        setReviews(book.reviews || []);
+        return;
+      }
+
+      setLoadingReviews(true);
+      try {
+        const fetchedReviews = await fetchReviewsForBook(book.id);
+        setReviews(fetchedReviews);
+      } catch (error) {
+        console.error('Error loading reviews:', error);
+        // Fall back to book's reviews if fetch fails
+        setReviews(book.reviews || []);
+      } finally {
+        setLoadingReviews(false);
+      }
+    }
+
+    loadReviews();
+  }, [book?.id]);
 
   if (!book) return null;
 
@@ -394,39 +432,34 @@ export function BookModal({ book, isOpen, onClose, onViewUser, onBookSelect }: B
     }
   };
 
-  const handleSubmitReview = async () => {
-    if (!userComment.trim()) {
-      toast.error('Please write a comment before submitting');
+  const handleLogBook = async () => {
+    if (!startDate) {
+      toast.error('Please select a start date');
       return;
     }
     
-    if (userRating === 0) {
-      toast.error('Please rate the book before submitting your review');
-      return;
-    }
-
-    setIsSubmittingReview(true);
+    setIsLoggingBook(true);
     
-    // Simulate API call
-    try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Here you would normally send the review to your backend
-      // For now, we'll just show a success message
-      toast.success('Your review has been submitted!');
-      setUserComment('');
-      
-      // Optionally reset the rating if you want
-      // setUserRating(0);
-      
-    } catch (error) {
-      toast.error('Failed to submit review. Please try again.');
-    } finally {
-      setIsSubmittingReview(false);
+    const success = await handleLogBookWithSupabase(
+      user,
+      book,
+      startDate,
+      finishDate,
+      setIsReading,
+      setIsCompleted
+    );
+    
+    if (success) {
+      // Reset the form
+      setStartDate(undefined);
+      setFinishDate(undefined);
+      setShowLogBookDialog(false);
     }
+    
+    setIsLoggingBook(false);
   };
 
-  const handleLogBook = async () => {
+  const handleLogBook_OLD = async () => {
     if (!startDate) {
       toast.error('Please select a start date');
       return;
@@ -466,6 +499,68 @@ export function BookModal({ book, isOpen, onClose, onViewUser, onBookSelect }: B
     setStartDate(undefined);
     setFinishDate(undefined);
     setShowLogBookDialog(false);
+  };
+
+  const handleSubmitReview = async () => {
+    if (!user?.id) {
+      toast.error('Please log in to submit a review');
+      return;
+    }
+
+    if (!book?.id) {
+      toast.error('Invalid book');
+      return;
+    }
+
+    if (userRating === 0) {
+      toast.error('Please select a rating');
+      return;
+    }
+
+    if (!userComment.trim()) {
+      toast.error('Please write a review');
+      return;
+    }
+
+    // Check if book ID is a valid UUID (from database) or numeric ID (from mock data)
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(book.id);
+    
+    if (!isUUID) {
+      // This is mock data, just show local feedback
+      toast.success('Review submitted! (Mock data - not saved to database)');
+      setUserComment('');
+      return;
+    }
+
+    setIsSubmittingReview(true);
+
+    try {
+      const newReview = await createReview({
+        bookId: book.id,
+        userId: user.id,
+        userName: user.name || 'Anonymous',
+        userAvatar: user.avatar,
+        rating: userRating,
+        title: reviewTitle.trim() || undefined,
+        content: userComment.trim()
+      });
+
+      if (newReview) {
+        toast.success('Review submitted successfully!');
+        setUserComment('');
+        setReviewTitle('');
+        
+        // Add the new review to the local state to show it immediately
+        setReviews(prevReviews => [newReview, ...prevReviews]);
+      } else {
+        toast.error('Failed to submit review. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error submitting review:', error);
+      toast.error('Failed to submit review. Please try again.');
+    } finally {
+      setIsSubmittingReview(false);
+    }
   };
 
   const handleDeleteReview = (reviewId: string) => {
@@ -529,10 +624,9 @@ export function BookModal({ book, isOpen, onClose, onViewUser, onBookSelect }: B
 
   // Filter reviews by rating
   const getFilteredReviews = () => {
-    const allReviews = book.reviews || [];
-    if (reviewFilter === 'all') return allReviews;
+    if (reviewFilter === 'all') return reviews;
     const filterRating = parseInt(reviewFilter);
-    return allReviews.filter(review => review.rating === filterRating);
+    return reviews.filter(review => review.rating === filterRating);
   };
 
   const filteredReviews = getFilteredReviews();
@@ -541,10 +635,9 @@ export function BookModal({ book, isOpen, onClose, onViewUser, onBookSelect }: B
 
   // Calculate rating distribution
   const getRatingDistribution = () => {
-    const allReviews = book.reviews || [];
     const distribution = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
     
-    allReviews.forEach(review => {
+    reviews.forEach(review => {
       if (review.rating >= 1 && review.rating <= 5) {
         distribution[review.rating as keyof typeof distribution]++;
       }
@@ -693,8 +786,12 @@ export function BookModal({ book, isOpen, onClose, onViewUser, onBookSelect }: B
                       className="min-touch-target"
                     >
                       <BookmarkPlus className={`w-4 h-4 mr-2 ${isInReadingList ? 'fill-current' : ''}`} />
-                      <span className="hidden sm:inline">List</span>
-                      <span className="sm:hidden">📚</span>
+                      <span className="hidden sm:inline">
+                        {isInReadingList ? 'Remove' : 'Add'}
+                      </span>
+                      <span className="sm:hidden">
+                        {isInReadingList ? '✓' : '+'}
+                      </span>
                     </Button>
                     
                     <Button 
@@ -951,14 +1048,34 @@ export function BookModal({ book, isOpen, onClose, onViewUser, onBookSelect }: B
                       </p>
                     </div>
                     
-                    <Textarea
-                      id="user-comment"
-                      placeholder="What did you think of this book? Share your thoughts here..."
-                      value={userComment}
-                      onChange={(e) => setUserComment(e.target.value)}
-                      className="min-h-24 resize-none"
-                      maxLength={500}
-                    />
+                    {/* Review Title (Optional) */}
+                    <div className="space-y-2">
+                      <label htmlFor="review-title" className="text-sm">
+                        Review Title (Optional)
+                      </label>
+                      <Input
+                        id="review-title"
+                        placeholder="e.g., A masterpiece of modern fiction"
+                        value={reviewTitle}
+                        onChange={(e) => setReviewTitle(e.target.value)}
+                        maxLength={100}
+                      />
+                    </div>
+                    
+                    {/* Review Content */}
+                    <div className="space-y-2">
+                      <label htmlFor="user-comment" className="text-sm">
+                        Your Review *
+                      </label>
+                      <Textarea
+                        id="user-comment"
+                        placeholder="What did you think of this book? Share your thoughts here..."
+                        value={userComment}
+                        onChange={(e) => setUserComment(e.target.value)}
+                        className="min-h-24 resize-none"
+                        maxLength={500}
+                      />
+                    </div>
                     
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-muted-foreground">
@@ -1179,12 +1296,12 @@ export function BookModal({ book, isOpen, onClose, onViewUser, onBookSelect }: B
             </Dialog>
 
             {/* Readers' Reviews Section */}
-            {book.reviews && book.reviews.length > 0 && (
+            {reviews.length > 0 && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h3>Reader Reviews</h3>
                   <Badge variant="secondary" className="text-xs">
-                    {reviewFilter === 'all' ? book.reviews.length : filteredReviews.length} reviews
+                    {reviewFilter === 'all' ? reviews.length : filteredReviews.length} reviews
                   </Badge>
                 </div>
 
@@ -1199,7 +1316,7 @@ export function BookModal({ book, isOpen, onClose, onViewUser, onBookSelect }: B
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Reviews ({book.reviews.length})</SelectItem>
+                      <SelectItem value="all">All Reviews ({reviews.length})</SelectItem>
                       {[5, 4, 3, 2, 1].map(rating => (
                         <SelectItem key={rating} value={rating.toString()}>
                           <div className="flex items-center gap-2">

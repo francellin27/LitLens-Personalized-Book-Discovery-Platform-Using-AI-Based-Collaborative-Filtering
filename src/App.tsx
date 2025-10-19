@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AuthProvider, useAuth } from "./lib/auth-supabase";
 import { Login } from "./components/Login";
 import { Navigation, PageType } from "./components/Navigation";
@@ -38,6 +38,7 @@ import { HelpPrivacyDataPolicy } from "./components/HelpPrivacyDataPolicy";
 import { HelpPrivacyAccountSecurity } from "./components/HelpPrivacyAccountSecurity";
 import { HelpPrivacyDataSharing } from "./components/HelpPrivacyDataSharing";
 import { HelpPrivacyReporting } from "./components/HelpPrivacyReporting";
+import { MigrationAlert } from "./components/MigrationAlert";
 import { Toaster } from "./components/ui/sonner";
 import { Book } from "./lib/bookData";
 
@@ -56,6 +57,11 @@ function AppContent() {
     string | null
   >(null);
   const [previousPage, setPreviousPage] = useState<PageType>("help");
+
+  // Ensure scroll to top when page changes
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [currentPage, viewingUserId, viewingDiscussionId]);
 
   if (!user) {
     return <Login />;
@@ -279,19 +285,25 @@ function AppContent() {
     // Clear any active views when navigating
     setViewingUserId(null);
     setViewingDiscussionId(null);
-    // Scroll to top of page
-    window.scrollTo(0, 0);
+    
+    // Scroll to top of page - use setTimeout to ensure it happens after React re-renders
+    setTimeout(() => {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }, 0);
   };
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
+      {/* Migration Alert - Shows if database needs migration */}
+      <MigrationAlert />
+      
       <Navigation
         currentPage={currentPage}
         onPageChange={handlePageChange}
         user={user}
       />
 
-      <main className="mx-auto px-4 sm:px-6 lg:px-12 xl:px-16 py-4 sm:py-6 lg:py-8 flex-1 max-w-[1600px]">
+      <main className={`flex-1 ${viewingDiscussionId ? 'w-full' : 'mx-auto px-4 sm:px-6 lg:px-12 xl:px-16 py-4 sm:py-6 lg:py-8 max-w-[1600px]'}`}>
         {renderCurrentPage()}
       </main>
 

@@ -1,7 +1,37 @@
 import { useState, useMemo, useEffect } from 'react';
-import { MOCK_BOOKS, MOCK_REVIEWS, Book, Review, ReviewReport } from '../lib/bookData';
+import { Book, Review, ReviewReport } from '../lib/bookData';
 import { useAuth } from '../lib/auth-supabase';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { 
+  fetchBooks, 
+  createBook, 
+  updateBook, 
+  deleteBook,
+  fetchBookRequests,
+  updateBookRequestStatus,
+  deleteBookRequest,
+  type BookRequest,
+  fetchAllUsers,
+  updateUserRole,
+  updateUserProfile,
+  deleteUserAccount,
+  type UserProfile,
+  deleteReview,
+  updateReview,
+  fetchAllReviews,
+  fetchAllDiscussions,
+  updateDiscussion,
+  deleteDiscussion,
+  type Discussion
+} from '../lib/supabase-services';
+import { 
+  fetchAllAnalytics,
+  type BookGrowthData,
+  type ReviewDistribution,
+  type UserGrowthData,
+  type GenrePopularity,
+  type ReadingStatusData
+} from '../lib/supabase-analytics';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -13,30 +43,60 @@ import { Badge } from './ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { BookOpen, Users, MessageSquare, Plus, Edit, Trash2, Eye, Search, Flag, CheckCircle, XCircle, AlertTriangle, TrendingUp, Star, ChevronDown, ChevronUp, Save, X } from 'lucide-react';
+import { BookOpen, Users, MessageSquare, Plus, Edit, Trash2, Eye, Search, Flag, CheckCircle, XCircle, AlertTriangle, TrendingUp, Star, ChevronDown, ChevronUp, Save, X, BarChart3, LineChart } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { StarRating } from './StarRating';
 import { ReportedReviewsTable } from './ReportedReviewsTable';
 import { UserManagementTable } from './UserManagementTable';
+import { LineChart as RechartsLine, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 interface AdminPanelProps {}
 
-// Book request interface
-interface BookRequest {
-  id: string;
-  title: string;
-  author: string;
-  isbn?: string;
-  additionalNotes?: string;
-  requestedBy: string;
-  requestDate: string;
-  status: 'pending' | 'approved' | 'rejected';
-}
-
 export function AdminPanel({}: AdminPanelProps) {
   const { getReviewReports, updateReportStatus } = useAuth();
-  const [books, setBooks] = useState<Book[]>(MOCK_BOOKS);
+  const [books, setBooks] = useState<Book[]>([]);
+  const [bookRequests, setBookRequests] = useState<BookRequest[]>([]);
   const [reviewReports, setReviewReports] = useState<ReviewReport[]>([]);
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [admins, setAdmins] = useState<UserProfile[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [discussions, setDiscussions] = useState<Discussion[]>([]);
+  const [isLoadingBooks, setIsLoadingBooks] = useState(true);
+  const [isLoadingRequests, setIsLoadingRequests] = useState(true);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(true);
+  const [isLoadingReviews, setIsLoadingReviews] = useState(true);
+  const [isLoadingDiscussions, setIsLoadingDiscussions] = useState(true);
+  
+  // Analytics data state
+  const [analyticsData, setAnalyticsData] = useState<{
+    booksGrowth: BookGrowthData[];
+    reviewDistribution: ReviewDistribution[];
+    userGrowth: UserGrowthData[];
+    topGenres: GenrePopularity[];
+    readingStatus: ReadingStatusData[];
+  }>({
+    booksGrowth: [],
+    reviewDistribution: [],
+    userGrowth: [],
+    topGenres: [],
+    readingStatus: []
+  });
+  const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(true);
+  
+  // Load books from Supabase on mount
+  useEffect(() => {
+    loadBooks();
+  }, []);
+
+  // Load book requests from Supabase on mount
+  useEffect(() => {
+    loadBookRequests();
+  }, []);
+
+  // Load users from Supabase on mount
+  useEffect(() => {
+    loadUsers();
+  }, []);
   
   // Load review reports on mount
   useEffect(() => {
@@ -46,70 +106,116 @@ export function AdminPanel({}: AdminPanelProps) {
     };
     loadReports();
   }, []);
-  
-  // Mock book requests data
-  const [bookRequests, setBookRequests] = useState<BookRequest[]>([
-    {
-      id: 'req_1',
-      title: 'The Invisible Life of Addie LaRue',
-      author: 'V.E. Schwab',
-      isbn: '978-0765387561',
-      additionalNotes: 'Really interested in reading this fantasy novel. Heard great things about it!',
-      requestedBy: 'Sarah Johnson',
-      requestDate: '2024-10-08T10:30:00Z',
-      status: 'pending'
-    },
-    {
-      id: 'req_2',
-      title: 'Project Hail Mary',
-      author: 'Andy Weir',
-      isbn: '978-0593135204',
-      additionalNotes: '',
-      requestedBy: 'Michael Chen',
-      requestDate: '2024-10-07T14:15:00Z',
-      status: 'pending'
-    },
-    {
-      id: 'req_3',
-      title: 'The House in the Cerulean Sea',
-      author: 'TJ Klune',
-      isbn: '',
-      additionalNotes: 'Everyone in my book club is reading this. Would love to see it in the library.',
-      requestedBy: 'Emma Davis',
-      requestDate: '2024-10-06T09:45:00Z',
-      status: 'pending'
-    },
-    {
-      id: 'req_4',
-      title: 'Atomic Habits',
-      author: 'James Clear',
-      isbn: '978-0735211292',
-      additionalNotes: 'Looking for self-improvement books.',
-      requestedBy: 'Alex Turner',
-      requestDate: '2024-10-05T16:20:00Z',
-      status: 'pending'
-    },
-    {
-      id: 'req_5',
-      title: 'The Seven Moons of Maali Almeida',
-      author: 'Shehan Karunatilaka',
-      isbn: '',
-      additionalNotes: 'Booker Prize winner 2022. Would be great to have in the collection.',
-      requestedBy: 'David Wilson',
-      requestDate: '2024-10-04T11:00:00Z',
-      status: 'pending'
-    }
-  ]);
-  
-  // Extract all reviews from all books
-  const allReviews = useMemo(() => {
-    return books.reduce((acc: Review[], book) => {
-      if (book.reviews) {
-        return [...acc, ...book.reviews];
+
+  // Load reviews from Supabase on mount
+  useEffect(() => {
+    loadReviews();
+  }, []);
+
+  // Load discussions from Supabase on mount
+  useEffect(() => {
+    loadDiscussions();
+  }, []);
+
+  // Load analytics data on mount
+  useEffect(() => {
+    const loadAnalytics = async () => {
+      setIsLoadingAnalytics(true);
+      try {
+        const data = await fetchAllAnalytics();
+        setAnalyticsData(data);
+      } catch (error) {
+        console.error('Error loading analytics:', error);
+        toast.error('Failed to load analytics data');
+      } finally {
+        setIsLoadingAnalytics(false);
       }
-      return acc;
-    }, []);
-  }, [books]);
+    };
+    loadAnalytics();
+  }, []);
+
+  const loadBooks = async () => {
+    setIsLoadingBooks(true);
+    try {
+      const { books: fetchedBooks } = await fetchBooks({ limit: 1000 });
+      setBooks(fetchedBooks);
+    } catch (error) {
+      console.error('Error loading books:', error);
+      toast.error('Failed to load books');
+    } finally {
+      setIsLoadingBooks(false);
+    }
+  };
+
+  const loadBookRequests = async () => {
+    setIsLoadingRequests(true);
+    try {
+      const requests = await fetchBookRequests();
+      setBookRequests(requests);
+    } catch (error) {
+      console.error('Error loading book requests:', error);
+      toast.error('Failed to load book requests');
+    } finally {
+      setIsLoadingRequests(false);
+    }
+  };
+
+  const loadUsers = async () => {
+    setIsLoadingUsers(true);
+    try {
+      const [allUsers, allAdmins] = await Promise.all([
+        fetchAllUsers('user'),
+        fetchAllUsers('admin')
+      ]);
+      setUsers(allUsers);
+      setAdmins(allAdmins);
+    } catch (error) {
+      console.error('Error loading users:', error);
+      toast.error('Failed to load users');
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  };
+
+  const loadReviews = async () => {
+    setIsLoadingReviews(true);
+    try {
+      const fetchedReviews = await fetchAllReviews();
+      setReviews(fetchedReviews);
+    } catch (error) {
+      console.error('Error loading reviews:', error);
+      toast.error('Failed to load reviews');
+    } finally {
+      setIsLoadingReviews(false);
+    }
+  };
+
+  const loadDiscussions = async () => {
+    setIsLoadingDiscussions(true);
+    try {
+      const fetchedDiscussions = await fetchAllDiscussions();
+      setDiscussions(fetchedDiscussions);
+    } catch (error: any) {
+      console.error('Error loading discussions:', error);
+      
+      // Check if error is due to missing table
+      if (error?.code === 'PGRST200' || error?.message?.includes('discussions')) {
+        toast.error('Database migration needed', {
+          description: 'Run migration 004_discussions_tables.sql in Supabase SQL Editor',
+          duration: 10000,
+        });
+      } else {
+        toast.error('Failed to load discussions');
+      }
+    } finally {
+      setIsLoadingDiscussions(false);
+    }
+  };
+  
+  // Use reviews from state instead of extracting from books
+  const allReviews = useMemo(() => {
+    return reviews;
+  }, [reviews]);
   
 
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
@@ -182,65 +288,37 @@ export function AdminPanel({}: AdminPanelProps) {
     }
   });
 
-  const mockUsers = [
-    { id: '1', name: 'John Reader', email: 'user@example.com', role: 'user', joinDate: '2024-01-15', booksRead: 23 },
-    { id: '2', name: 'Sarah Wilson', email: 'sarah@example.com', role: 'user', joinDate: '2024-02-20', booksRead: 12 },
-    { id: '3', name: 'Mike Johnson', email: 'mike@example.com', role: 'user', joinDate: '2024-03-10', booksRead: 8 },
-    { id: '4', name: 'Emma Davis', email: 'emma@example.com', role: 'user', joinDate: '2024-01-28', booksRead: 31 },
-    { id: '5', name: 'David Wilson', email: 'david@example.com', role: 'user', joinDate: '2024-02-15', booksRead: 15 }
-  ];
+  // Transform UserProfile to match UserManagementTable expected format
+  const transformedUsers = users.map(user => ({
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    joinDate: user.createdAt,
+    booksRead: user.booksRead
+  }));
 
-  const mockAdmins = [
-    { id: 'admin_1', name: 'Admin User', email: 'admin@example.com', role: 'admin', joinDate: '2024-01-01', booksRead: 45 },
-    { id: 'admin_2', name: 'Super Admin', email: 'superadmin@example.com', role: 'admin', joinDate: '2023-12-01', booksRead: 78 },
-    { id: 'admin_3', name: 'Content Manager', email: 'content@example.com', role: 'admin', joinDate: '2024-01-10', booksRead: 52 }
-  ];
+  const transformedAdmins = admins.map(admin => ({
+    id: admin.id,
+    name: admin.name,
+    email: admin.email,
+    role: admin.role,
+    joinDate: admin.createdAt,
+    booksRead: admin.booksRead
+  }));
 
-  // Mock community data
-  const mockDiscussions = [
-    {
-      id: 'disc_1',
-      title: 'What are your thoughts on the ending of "The Midnight Library"?',
-      author: 'Sarah Johnson',
-      authorAvatar: 'https://images.unsplash.com/photo-1494790108755-2616b612b11c?w=150',
-      bookTitle: 'The Midnight Library',
-      replies: 24,
-      lastActivity: '2 hours ago',
-      category: 'Book Discussion',
-      isPopular: true
-    },
-    {
-      id: 'disc_2',
-      title: 'Looking for sci-fi recommendations similar to The Maze Runner',
-      author: 'Alex Turner',
-      authorAvatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
-      bookTitle: 'The Maze Runner',
-      replies: 18,
-      lastActivity: '4 hours ago',
-      category: 'Recommendations'
-    },
-    {
-      id: 'disc_3',
-      title: 'Monthly Romance Reads - Share your favorites!',
-      author: 'Emma Wilson',
-      authorAvatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150',
-      bookTitle: 'The Seven Husbands of Evelyn Hugo',
-      replies: 31,
-      lastActivity: '6 hours ago',
-      category: 'General Discussion',
-      isPopular: true
-    },
-    {
-      id: 'disc_4',
-      title: 'Book club selection for next month - Vote now!',
-      author: 'Michael Chen',
-      authorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-      bookTitle: 'The Silent Patient',
-      replies: 15,
-      lastActivity: '8 hours ago',
-      category: 'Book Club'
-    }
-  ];
+  // Calculate time ago for discussions
+  const getTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (seconds < 60) return 'just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
+    if (seconds < 604800) return `${Math.floor(seconds / 86400)} days ago`;
+    return `${Math.floor(seconds / 604800)} weeks ago`;
+  };
 
   const mockCommunityReports = [
     {
@@ -486,67 +564,84 @@ export function AdminPanel({}: AdminPanelProps) {
     toast.success('All filters cleared');
   };
 
-  const handleAddBook = () => {
+  const handleAddBook = async () => {
     if (!newBook.title || !newBook.author) {
       toast.error('Please fill in required fields');
       return;
     }
 
-    const book: Book = {
-      id: Date.now().toString(),
-      title: newBook.title!,
-      author: newBook.author!,
-      authorInfo: `Information about ${newBook.author}`,
-      cover: newBook.cover || 'https://images.unsplash.com/photo-1535269414141-739bf0054cde?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxib29rJTIwY292ZXIlMjB2aW50YWdlJTIwbGl0ZXJhdHVyZXxlbnwxfHx8fDE3NTg1OTMzODF8MA&ixlib=rb-4.1.0&q=80&w=1080',
-      rating: 0,
-      totalRatings: 0,
-      genre: newBook.genre!,
-      description: newBook.description!,
-      publishedYear: newBook.publishedYear!,
-      pages: newBook.pages!,
-      isbn: newBook.isbn!,
-      publisher: newBook.publisher!,
-      language: newBook.language!,
-      viewCount: 0,
-      readCount: 0,
-      length: `${Math.floor(newBook.pages! / 50)} hours`,
-      publishingInfo: `Published by ${newBook.publisher} in ${newBook.publishedYear}`
-    };
+    try {
+      const bookData = {
+        title: newBook.title,
+        author: newBook.author,
+        authorInfo: `Information about ${newBook.author}`,
+        cover: newBook.cover || 'https://images.unsplash.com/photo-1535269414141-739bf0054cde?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxib29rJTIwY292ZXIlMjB2aW50YWdlJTIwbGl0ZXJhdHVyZXxlbnwxfHx8fDE3NTg1OTMzODF8MA&ixlib=rb-4.1.0&q=80&w=1080',
+        genre: newBook.genre || ['Fiction'],
+        description: newBook.description || '',
+        publishedYear: newBook.publishedYear || new Date().getFullYear(),
+        pages: newBook.pages || 0,
+        isbn: newBook.isbn || '',
+        publisher: newBook.publisher || '',
+        language: newBook.language || 'English',
+        length: `${Math.floor((newBook.pages || 0) / 50)} hours`,
+        publishingInfo: `Published by ${newBook.publisher} in ${newBook.publishedYear}`,
+        publishedDate: `${newBook.publishedYear}`,
+      };
 
-    setBooks([...books, book]);
-    resetBookForm();
-    setIsAddingBook(false);
-    toast.success('Book added successfully!');
+      const createdBook = await createBook(bookData);
+      
+      if (createdBook) {
+        await loadBooks(); // Reload books from database
+        resetBookForm();
+        setIsAddingBook(false);
+        toast.success('Book added successfully!');
+      } else {
+        toast.error('Failed to add book');
+      }
+    } catch (error) {
+      console.error('Error adding book:', error);
+      toast.error('Failed to add book');
+    }
   };
 
-  const handleEditBook = () => {
+  const handleEditBook = async () => {
     if (!selectedBook || !newBook.title || !newBook.author) {
       toast.error('Please fill in required fields');
       return;
     }
 
-    const updatedBook: Book = {
-      ...selectedBook,
-      title: newBook.title!,
-      author: newBook.author!,
-      authorInfo: `Information about ${newBook.author}`,
-      cover: newBook.cover || selectedBook.cover,
-      genre: newBook.genre!,
-      description: newBook.description!,
-      publishedYear: newBook.publishedYear!,
-      pages: newBook.pages!,
-      isbn: newBook.isbn!,
-      publisher: newBook.publisher!,
-      language: newBook.language!,
-      length: `${Math.floor(newBook.pages! / 50)} hours`,
-      publishingInfo: `Published by ${newBook.publisher} in ${newBook.publishedYear}`
-    };
+    try {
+      const updates = {
+        title: newBook.title,
+        author: newBook.author,
+        authorInfo: `Information about ${newBook.author}`,
+        cover: newBook.cover || selectedBook.cover,
+        genre: newBook.genre,
+        description: newBook.description,
+        publishedYear: newBook.publishedYear,
+        pages: newBook.pages,
+        isbn: newBook.isbn,
+        publisher: newBook.publisher,
+        language: newBook.language,
+        length: `${Math.floor((newBook.pages || 0) / 50)} hours`,
+        publishingInfo: `Published by ${newBook.publisher} in ${newBook.publishedYear}`,
+      };
 
-    setBooks(books.map(book => book.id === selectedBook.id ? updatedBook : book));
-    resetBookForm();
-    setIsEditingBook(false);
-    setSelectedBook(null);
-    toast.success('Book updated successfully!');
+      const success = await updateBook(selectedBook.id, updates);
+      
+      if (success) {
+        await loadBooks(); // Reload books from database
+        resetBookForm();
+        setIsEditingBook(false);
+        setSelectedBook(null);
+        toast.success('Book updated successfully!');
+      } else {
+        toast.error('Failed to update book');
+      }
+    } catch (error) {
+      console.error('Error updating book:', error);
+      toast.error('Failed to update book');
+    }
   };
 
   const resetBookForm = () => {
@@ -581,25 +676,41 @@ export function AdminPanel({}: AdminPanelProps) {
     setIsEditingBook(true);
   };
 
-  const handleDeleteBook = (bookId: string) => {
-    setBooks(books.filter(book => book.id !== bookId));
-    toast.success('Book removed successfully!');
+  const handleDeleteBook = async (bookId: string) => {
+    try {
+      const success = await deleteBook(bookId);
+      if (success) {
+        await loadBooks(); // Reload books from database
+        toast.success('Book removed successfully!');
+      } else {
+        toast.error('Failed to remove book');
+      }
+    } catch (error) {
+      console.error('Error deleting book:', error);
+      toast.error('Failed to remove book');
+    }
   };
 
-  const handleDeleteReview = (reviewId: string) => {
-    // Remove review from the books array
-    const updatedBooks = books.map(book => {
-      if (book.reviews) {
-        return {
-          ...book,
-          reviews: book.reviews.filter(review => review.id !== reviewId)
-        };
+  const handleDeleteReview = async (reviewId: string) => {
+    try {
+      const success = await deleteReview(reviewId);
+      
+      if (success) {
+        // Reload reviews to get updated list
+        await loadReviews();
+        // Reload books to update review counts
+        await loadBooks();
+        // Reload review reports to refresh the list
+        const reports = await getReviewReports();
+        setReviewReports(reports);
+        toast.success('Review removed successfully!');
+      } else {
+        toast.error('Failed to remove review');
       }
-      return book;
-    });
-    
-    setBooks(updatedBooks);
-    toast.success('Review removed successfully!');
+    } catch (error) {
+      console.error('Error deleting review:', error);
+      toast.error('Failed to remove review');
+    }
   };
 
   const handleStartEditReview = (review: Review) => {
@@ -620,37 +731,36 @@ export function AdminPanel({}: AdminPanelProps) {
     });
   };
 
-  const handleSaveEditReview = (reviewId: string) => {
+  const handleSaveEditReview = async (reviewId: string) => {
     if (!editingReviewData.content.trim()) {
       toast.error('Review content cannot be empty');
       return;
     }
 
-    const updatedBooks = books.map(book => {
-      if (book.reviews) {
-        return {
-          ...book,
-          reviews: book.reviews.map(review => 
-            review.id === reviewId
-              ? {
-                  ...review,
-                  title: editingReviewData.title,
-                  content: editingReviewData.content,
-                  rating: editingReviewData.rating
-                }
-              : review
-          )
-        };
-      }
-      return book;
-    });
+    try {
+      const success = await updateReview(reviewId, {
+        title: editingReviewData.title,
+        content: editingReviewData.content,
+        rating: editingReviewData.rating
+      });
 
-    setBooks(updatedBooks);
-    handleCancelEditReview();
-    toast.success('Review updated successfully!');
+      if (success) {
+        // Reload reviews to get updated list
+        await loadReviews();
+        // Reload books to update review counts
+        await loadBooks();
+        handleCancelEditReview();
+        toast.success('Review updated successfully!');
+      } else {
+        toast.error('Failed to update review');
+      }
+    } catch (error) {
+      console.error('Error updating review:', error);
+      toast.error('Failed to update review');
+    }
   };
 
-  const handleEditAdmin = (admin: any) => {
+  const handleEditAdmin = async (admin: any) => {
     setSelectedAdmin(admin);
     setAdminFormData({
       name: admin.name,
@@ -666,16 +776,29 @@ export function AdminPanel({}: AdminPanelProps) {
     setIsEditingAdmin(true);
   };
 
-  const handleSaveAdmin = () => {
+  const handleSaveAdmin = async () => {
     if (!adminFormData.name || !adminFormData.email) {
       toast.error('Please fill in required fields');
       return;
     }
     
-    // Here you would update the admin in your backend
-    toast.success('Admin updated successfully!');
-    setIsEditingAdmin(false);
-    setSelectedAdmin(null);
+    try {
+      const success = await updateUserProfile(selectedAdmin.id, {
+        name: adminFormData.name
+      });
+
+      if (success) {
+        await loadUsers(); // Reload users from database
+        toast.success('Admin updated successfully!');
+        setIsEditingAdmin(false);
+        setSelectedAdmin(null);
+      } else {
+        toast.error('Failed to update admin');
+      }
+    } catch (error) {
+      console.error('Error updating admin:', error);
+      toast.error('Failed to update admin');
+    }
   };
 
   const handleManageUser = (user: any) => {
@@ -684,43 +807,133 @@ export function AdminPanel({}: AdminPanelProps) {
   };
 
   const handleSuspendUser = () => {
-    toast.success(`User ${selectedUser?.name} has been suspended`);
+    // Note: Suspension/banning would require additional database fields
+    toast.success(`User ${selectedUser?.name} suspension feature coming soon`);
     setIsManagingUser(false);
     setSelectedUser(null);
   };
 
-  const handleDeleteUser = () => {
-    toast.success(`User ${selectedUser?.name} has been deleted`);
-    setIsManagingUser(false);
-    setSelectedUser(null);
+  const handleDeleteUser = async () => {
+    if (!selectedUser) return;
+
+    if (!window.confirm(`Are you sure you want to delete ${selectedUser.name}? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const success = await deleteUserAccount(selectedUser.id);
+      
+      if (success) {
+        await loadUsers(); // Reload users from database
+        toast.success(`User ${selectedUser.name} has been deleted`);
+        setIsManagingUser(false);
+        setSelectedUser(null);
+      } else {
+        toast.error('Failed to delete user');
+      }
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      toast.error('Failed to delete user');
+    }
   };
 
   const handleResetUserPassword = () => {
-    toast.success(`Password reset email sent to ${selectedUser?.email}`);
+    // Note: Password reset would be handled through Supabase Auth
+    toast.success(`Password reset functionality coming soon`);
   };
 
   const handleBanUser = () => {
-    toast.success(`User ${selectedUser?.name} has been banned from the platform`);
+    // Note: Banning would require additional database fields
+    toast.success(`User banning feature coming soon`);
     setIsManagingUser(false);
     setSelectedUser(null);
   };
 
-  const handleApproveRequest = (requestId: string) => {
-    setBookRequests(prev => 
-      prev.map(req => req.id === requestId ? { ...req, status: 'approved' as const } : req)
-    );
-    toast.success('Book request approved successfully!');
-    setIsViewingRequest(false);
-    setSelectedRequest(null);
+  const handlePromoteToAdmin = async (user: any) => {
+    try {
+      const success = await updateUserRole(user.id, 'admin');
+      
+      if (success) {
+        await loadUsers(); // Reload users from database
+        toast.success(`${user.name} has been promoted to admin`);
+      } else {
+        toast.error('Failed to promote user');
+      }
+    } catch (error) {
+      console.error('Error promoting user:', error);
+      toast.error('Failed to promote user');
+    }
   };
 
-  const handleDenyRequest = (requestId: string) => {
-    setBookRequests(prev => 
-      prev.map(req => req.id === requestId ? { ...req, status: 'rejected' as const } : req)
-    );
-    toast.success('Book request denied');
-    setIsViewingRequest(false);
-    setSelectedRequest(null);
+  const handleDemoteFromAdmin = async (admin: any) => {
+    if (!window.confirm(`Are you sure you want to remove admin privileges from ${admin.name}?`)) {
+      return;
+    }
+
+    try {
+      const success = await updateUserRole(admin.id, 'user');
+      
+      if (success) {
+        await loadUsers(); // Reload users from database
+        toast.success(`${admin.name} has been demoted to regular user`);
+      } else {
+        toast.error('Failed to demote admin');
+      }
+    } catch (error) {
+      console.error('Error demoting admin:', error);
+      toast.error('Failed to demote admin');
+    }
+  };
+
+  const handleApproveRequest = async (requestId: string) => {
+    try {
+      const success = await updateBookRequestStatus(requestId, 'approved');
+      if (success) {
+        await loadBookRequests(); // Reload requests from database
+        toast.success('Book request approved successfully!');
+        setIsViewingRequest(false);
+        setSelectedRequest(null);
+      } else {
+        toast.error('Failed to approve request');
+      }
+    } catch (error) {
+      console.error('Error approving request:', error);
+      toast.error('Failed to approve request');
+    }
+  };
+
+  const handleDenyRequest = async (requestId: string) => {
+    try {
+      const success = await updateBookRequestStatus(requestId, 'rejected');
+      if (success) {
+        await loadBookRequests(); // Reload requests from database
+        toast.success('Book request denied');
+        setIsViewingRequest(false);
+        setSelectedRequest(null);
+      } else {
+        toast.error('Failed to deny request');
+      }
+    } catch (error) {
+      console.error('Error denying request:', error);
+      toast.error('Failed to deny request');
+    }
+  };
+
+  const handleDeleteRequest = async (requestId: string) => {
+    try {
+      const success = await deleteBookRequest(requestId);
+      if (success) {
+        await loadBookRequests(); // Reload requests from database
+        toast.success('Book request deleted successfully!');
+        setIsViewingRequest(false);
+        setSelectedRequest(null);
+      } else {
+        toast.error('Failed to delete request');
+      }
+    } catch (error) {
+      console.error('Error deleting request:', error);
+      toast.error('Failed to delete request');
+    }
   };
 
   const handleUpdateReportStatus = async (reportId: string, status: ReviewReport['status']) => {
@@ -773,10 +986,20 @@ export function AdminPanel({}: AdminPanelProps) {
     });
   };
 
-  const handleDeleteDiscussion = (discussionId: string, title: string) => {
+  const handleDeleteDiscussionClick = async (discussionId: string, title: string) => {
     if (window.confirm(`Are you sure you want to delete the discussion "${title}"? This action cannot be undone.`)) {
-      toast.success(`Discussion "${title}" has been deleted`);
-      // Here you would remove the discussion from the backend
+      try {
+        const success = await deleteDiscussion(discussionId);
+        if (success) {
+          toast.success(`Discussion "${title}" has been deleted`);
+          await loadDiscussions(); // Reload discussions list
+        } else {
+          toast.error('Failed to delete discussion');
+        }
+      } catch (error) {
+        console.error('Error deleting discussion:', error);
+        toast.error('Failed to delete discussion');
+      }
     }
   };
 
@@ -1002,7 +1225,7 @@ export function AdminPanel({}: AdminPanelProps) {
           </CardHeader>
           <CardContent className="px-2 md:px-6 pb-3 md:pb-6">
             <div className="space-y-0.5 md:space-y-1">
-              <div className="text-2xl md:text-3xl" style={{ color: '#535050' }}>{mockUsers.length}</div>
+              <div className="text-2xl md:text-3xl" style={{ color: '#535050' }}>{users.length}</div>
               <div className="hidden md:flex items-center gap-1 text-xs text-green-600">
                 <TrendingUp className="w-3 h-3" />
                 <span>+8% from last month</span>
@@ -1044,7 +1267,7 @@ export function AdminPanel({}: AdminPanelProps) {
           </CardHeader>
           <CardContent className="px-2 md:px-6 pb-3 md:pb-6">
             <div className="space-y-0.5 md:space-y-1">
-              <div className="text-2xl md:text-3xl" style={{ color: '#535050' }}>{mockAdmins.length}</div>
+              <div className="text-2xl md:text-3xl" style={{ color: '#535050' }}>{admins.length}</div>
               <div className="hidden md:flex items-center gap-1 text-xs text-muted-foreground">
                 <span>Managing platform</span>
               </div>
@@ -1088,7 +1311,7 @@ export function AdminPanel({}: AdminPanelProps) {
           </CardHeader>
           <CardContent className="px-2 md:px-6 pb-3 md:pb-6">
             <div className="space-y-0.5 md:space-y-1">
-              <div className="text-2xl md:text-3xl" style={{ color: '#535050' }}>{mockCommunityReports.filter(r => r.status === 'pending').length}</div>
+              <div className="text-2xl md:text-3xl" style={{ color: '#535050' }}>0</div>
               <div className="hidden md:flex items-center gap-1 text-xs text-amber-600">
                 <AlertTriangle className="w-3 h-3" />
                 <span>Requires attention</span>
@@ -1096,6 +1319,249 @@ export function AdminPanel({}: AdminPanelProps) {
             </div>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Analytics & Visualizations Section */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 mb-4">
+          <BarChart3 className="w-6 h-6" style={{ color: '#879656' }} />
+          <h2 className="text-xl md:text-2xl" style={{ color: '#535050' }}>Platform Analytics</h2>
+        </div>
+
+        {isLoadingAnalytics ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <Card key={i} className="border-none shadow-md">
+                <CardHeader>
+                  <div className="h-6 bg-muted animate-pulse rounded w-1/3"></div>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-64 bg-muted animate-pulse rounded"></div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Books Added Over Time */}
+            <Card className="border-none shadow-md hover:shadow-lg transition-shadow">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <LineChart className="w-5 h-5" style={{ color: '#879656' }} />
+                  Books Added Over Time
+                </CardTitle>
+                <CardDescription>Monthly book additions (last 6 months)</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <ResponsiveContainer width="100%" height={300}>
+                  <RechartsLine data={analyticsData.booksGrowth}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(83, 80, 80, 0.1)" />
+                    <XAxis 
+                      dataKey="date" 
+                      stroke="#6b6866"
+                      style={{ fontSize: '12px' }}
+                    />
+                    <YAxis 
+                      stroke="#6b6866"
+                      style={{ fontSize: '12px' }}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#ffffff',
+                        border: '1px solid rgba(83, 80, 80, 0.15)',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                      }}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="count" 
+                      stroke="#879656" 
+                      strokeWidth={2}
+                      dot={{ fill: '#879656', r: 4 }}
+                      activeDot={{ r: 6 }}
+                      name="Books Added"
+                    />
+                  </RechartsLine>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            {/* Review Rating Distribution */}
+            <Card className="border-none shadow-md hover:shadow-lg transition-shadow">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <BarChart3 className="w-5 h-5" style={{ color: '#879656' }} />
+                  Review Rating Distribution
+                </CardTitle>
+                <CardDescription>Count of reviews by star rating</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={analyticsData.reviewDistribution}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(83, 80, 80, 0.1)" />
+                    <XAxis 
+                      dataKey="rating" 
+                      stroke="#6b6866"
+                      style={{ fontSize: '12px' }}
+                      label={{ value: 'Star Rating', position: 'insideBottom', offset: -5, style: { fontSize: '12px', fill: '#6b6866' } }}
+                    />
+                    <YAxis 
+                      stroke="#6b6866"
+                      style={{ fontSize: '12px' }}
+                      label={{ value: 'Number of Reviews', angle: -90, position: 'insideLeft', style: { fontSize: '12px', fill: '#6b6866' } }}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#ffffff',
+                        border: '1px solid rgba(83, 80, 80, 0.15)',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                      }}
+                    />
+                    <Bar 
+                      dataKey="count" 
+                      fill="#879656"
+                      radius={[8, 8, 0, 0]}
+                      name="Reviews"
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            {/* User Growth */}
+            <Card className="border-none shadow-md hover:shadow-lg transition-shadow">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <LineChart className="w-5 h-5" style={{ color: '#879656' }} />
+                  User Growth
+                </CardTitle>
+                <CardDescription>New user registrations (last 6 months)</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <ResponsiveContainer width="100%" height={300}>
+                  <RechartsLine data={analyticsData.userGrowth}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(83, 80, 80, 0.1)" />
+                    <XAxis 
+                      dataKey="date" 
+                      stroke="#6b6866"
+                      style={{ fontSize: '12px' }}
+                    />
+                    <YAxis 
+                      stroke="#6b6866"
+                      style={{ fontSize: '12px' }}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#ffffff',
+                        border: '1px solid rgba(83, 80, 80, 0.15)',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                      }}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="count" 
+                      stroke="#a8a584" 
+                      strokeWidth={2}
+                      dot={{ fill: '#a8a584', r: 4 }}
+                      activeDot={{ r: 6 }}
+                      name="New Users"
+                    />
+                  </RechartsLine>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            {/* Top Genres */}
+            <Card className="border-none shadow-md hover:shadow-lg transition-shadow">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <BarChart3 className="w-5 h-5" style={{ color: '#879656' }} />
+                  Most Popular Genres
+                </CardTitle>
+                <CardDescription>Top 8 genres by book count</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={analyticsData.topGenres} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(83, 80, 80, 0.1)" />
+                    <XAxis 
+                      type="number"
+                      stroke="#6b6866"
+                      style={{ fontSize: '12px' }}
+                    />
+                    <YAxis 
+                      dataKey="genre" 
+                      type="category"
+                      stroke="#6b6866"
+                      style={{ fontSize: '12px' }}
+                      width={100}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#ffffff',
+                        border: '1px solid rgba(83, 80, 80, 0.15)',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                      }}
+                    />
+                    <Bar 
+                      dataKey="count" 
+                      fill="#879656"
+                      radius={[0, 8, 8, 0]}
+                      name="Books"
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            {/* Reading Status Distribution */}
+            {analyticsData.readingStatus.length > 0 && (
+              <Card className="border-none shadow-md hover:shadow-lg transition-shadow lg:col-span-2">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <BarChart3 className="w-5 h-5" style={{ color: '#879656' }} />
+                    Reading Status Distribution
+                  </CardTitle>
+                  <CardDescription>Books by reading status across all users</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={analyticsData.readingStatus}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(83, 80, 80, 0.1)" />
+                      <XAxis 
+                        dataKey="status" 
+                        stroke="#6b6866"
+                        style={{ fontSize: '12px' }}
+                      />
+                      <YAxis 
+                        stroke="#6b6866"
+                        style={{ fontSize: '12px' }}
+                      />
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: '#ffffff',
+                          border: '1px solid rgba(83, 80, 80, 0.15)',
+                          borderRadius: '8px',
+                          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                        }}
+                      />
+                      <Bar 
+                        dataKey="count" 
+                        fill="#a8a584"
+                        radius={[8, 8, 0, 0]}
+                        name="Books"
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Admin Tabs - Modern Card Design */}
@@ -1123,7 +1589,7 @@ export function AdminPanel({}: AdminPanelProps) {
               </TabsTrigger>
               <TabsTrigger 
                 value="users" 
-                aria-label={`User management, ${mockUsers.length} users`}
+                aria-label={`User management, ${users.length} users`}
                 className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md md:rounded-lg transition-all text-xs md:text-sm px-1 md:px-3"
               >
                 <Users className="w-3 h-3 md:w-4 md:h-4 md:mr-2" />
@@ -1238,7 +1704,7 @@ export function AdminPanel({}: AdminPanelProps) {
                   <div className="space-y-2 p-2">
                     {bookRequests
                       .filter(req => req.status === 'pending')
-                      .sort((a, b) => new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime())
+                      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                       .map((request) => (
                         <Card 
                           key={request.id}
@@ -1258,11 +1724,11 @@ export function AdminPanel({}: AdminPanelProps) {
                                 by {request.author}
                               </p>
                               <p className="text-xs text-muted-foreground">
-                                Requested by: {request.requestedBy}
+                                Requested by: {request.userName || 'Unknown User'}
                               </p>
                             </div>
                             <div className="text-xs text-muted-foreground flex-shrink-0">
-                              {new Date(request.requestDate).toLocaleDateString()}
+                              {new Date(request.createdAt).toLocaleDateString()}
                             </div>
                           </div>
                         </Card>
@@ -1295,52 +1761,220 @@ export function AdminPanel({}: AdminPanelProps) {
 
             {/* All Reviews Tab - Card View */}
             <TabsContent value="all-reviews" className="space-y-4">
-              {/* Search Bar for All Reviews */}
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search books by title or author..."
-                  value={allReviewsSearchQuery}
-                  onChange={(e) => setAllReviewsSearchQuery(e.target.value)}
-                  className="pl-10 text-sm"
-                />
-              </div>
+              {/* Search and Filter Controls */}
+              <div className="space-y-3">
+                {/* Search Bar */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search reviews by content, user, or book title..."
+                    value={reviewSearchQuery}
+                    onChange={(e) => setReviewSearchQuery(e.target.value)}
+                    className="pl-10 text-sm"
+                  />
+                </div>
 
-              <div style={{ height: '600px', overflow: 'auto' }}>
-                <div className="space-y-2 p-2">
-                  {booksWithReviews.map((book) => (
-                    <Card 
-                      key={book.id}
-                      className="p-3 cursor-pointer hover:shadow-md transition-shadow border-l-4 active:scale-[0.98]"
-                      style={{ borderLeftColor: '#879656' }}
-                      onClick={() => {
-                        setSelectedBookForReviews(book);
-                        setIsViewingBookReviews(true);
-                      }}
+                {/* Filter Controls */}
+                <div className="flex flex-wrap gap-2">
+                  <Select value={reviewRatingFilter} onValueChange={setReviewRatingFilter}>
+                    <SelectTrigger className="w-[140px] text-sm h-9">
+                      <SelectValue placeholder="Rating" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Ratings</SelectItem>
+                      <SelectItem value="5">5 Stars</SelectItem>
+                      <SelectItem value="4">4 Stars</SelectItem>
+                      <SelectItem value="3">3 Stars</SelectItem>
+                      <SelectItem value="2">2 Stars</SelectItem>
+                      <SelectItem value="1">1 Star</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={reviewDateFilter} onValueChange={setReviewDateFilter}>
+                    <SelectTrigger className="w-[140px] text-sm h-9">
+                      <SelectValue placeholder="Date" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Time</SelectItem>
+                      <SelectItem value="today">Today</SelectItem>
+                      <SelectItem value="week">This Week</SelectItem>
+                      <SelectItem value="month">This Month</SelectItem>
+                      <SelectItem value="year">This Year</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {(reviewSearchQuery || reviewRatingFilter !== 'all' || reviewDateFilter !== 'all') && (
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={clearAllReviewFilters}
+                      className="text-xs h-9"
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="space-y-1 flex-1 min-w-0">
-                          <h3 className="font-medium text-sm line-clamp-1" style={{ color: '#535050' }}>
-                            {book.title}
-                          </h3>
-                          <p className="text-xs text-muted-foreground">
-                            by {book.author}
-                          </p>
-                        </div>
-                        <div className="text-xs text-muted-foreground flex-shrink-0">
-                          {book.publishedYear}
-                        </div>
-                      </div>
-                    </Card>
-                  ))}
+                      Clear Filters
+                    </Button>
+                  )}
+                </div>
+
+                {/* Results Count */}
+                <div className="text-xs text-muted-foreground">
+                  Showing {filteredReviews.length} of {allReviews.length} reviews
                 </div>
               </div>
 
-              {booksWithReviews.length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  No books with reviews found
+              {/* Reviews List */}
+              <div style={{ height: '600px', overflow: 'auto' }}>
+                <div className="space-y-3 p-2">
+                  {filteredReviews.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      {allReviews.length === 0 ? 'No reviews yet' : 'No reviews match your filters'}
+                    </div>
+                  ) : (
+                    filteredReviews.map((review) => {
+                      const book = books.find(b => b.id === review.bookId);
+                      const isEditing = editingReviewId === review.id;
+                      
+                      return (
+                        <Card 
+                          key={review.id}
+                          className="p-4 hover:shadow-md transition-shadow border-l-4"
+                          style={{ borderLeftColor: '#879656' }}
+                        >
+                          {isEditing ? (
+                            // Edit Mode
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between">
+                                <h4 className="font-medium text-sm">Editing Review</h4>
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={handleCancelEditReview}
+                                    className="h-8"
+                                  >
+                                    <X className="w-4 h-4 mr-1" />
+                                    Cancel
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleSaveEditReview(review.id)}
+                                    className="h-8"
+                                    style={{ backgroundColor: '#879656' }}
+                                  >
+                                    <Save className="w-4 h-4 mr-1" />
+                                    Save
+                                  </Button>
+                                </div>
+                              </div>
+                              
+                              <div className="space-y-2">
+                                <div>
+                                  <Label className="text-xs">Rating</Label>
+                                  <StarRating
+                                    rating={editingReviewData.rating}
+                                    onRatingChange={(rating) => 
+                                      setEditingReviewData({ ...editingReviewData, rating })
+                                    }
+                                    size="md"
+                                  />
+                                </div>
+                                
+                                <div>
+                                  <Label className="text-xs">Review Title (Optional)</Label>
+                                  <Input
+                                    value={editingReviewData.title}
+                                    onChange={(e) => 
+                                      setEditingReviewData({ ...editingReviewData, title: e.target.value })
+                                    }
+                                    placeholder="Enter review title..."
+                                    className="text-sm"
+                                  />
+                                </div>
+                                
+                                <div>
+                                  <Label className="text-xs">Review Content</Label>
+                                  <Textarea
+                                    value={editingReviewData.content}
+                                    onChange={(e) => 
+                                      setEditingReviewData({ ...editingReviewData, content: e.target.value })
+                                    }
+                                    placeholder="Write your review..."
+                                    className="min-h-[100px] text-sm"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            // View Mode
+                            <div className="space-y-3">
+                              {/* Header - Book and User Info */}
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <StarRating rating={review.rating} readonly size="sm" />
+                                    <span className="text-xs text-muted-foreground">
+                                      by {review.userName}
+                                    </span>
+                                  </div>
+                                  
+                                  {book && (
+                                    <div className="text-xs text-muted-foreground">
+                                      <span className="font-medium">{book.title}</span> by {book.author}
+                                    </div>
+                                  )}
+                                  
+                                  {review.title && (
+                                    <h4 className="font-medium text-sm mt-2">{review.title}</h4>
+                                  )}
+                                </div>
+                                
+                                {/* Action Buttons */}
+                                <div className="flex items-center gap-1 flex-shrink-0">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleStartEditReview(review)}
+                                    className="h-8 w-8 p-0"
+                                  >
+                                    <Edit className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => {
+                                      if (window.confirm('Are you sure you want to delete this review?')) {
+                                        handleDeleteReview(review.id);
+                                      }
+                                    }}
+                                    className="h-8 w-8 p-0"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              </div>
+                              
+                              {/* Review Content */}
+                              <p className="text-sm text-foreground whitespace-pre-wrap">
+                                {review.content}
+                              </p>
+                              
+                              {/* Footer - Date */}
+                              <div className="flex items-center justify-between pt-2 border-t">
+                                <span className="text-xs text-muted-foreground">
+                                  {new Date(review.date).toLocaleDateString('en-US', { 
+                                    year: 'numeric', 
+                                    month: 'long', 
+                                    day: 'numeric' 
+                                  })}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </Card>
+                      );
+                    })
+                  )}
                 </div>
-              )}
+              </div>
             </TabsContent>
 
             {/* Reported Reviews Tab */}
@@ -1389,8 +2023,8 @@ export function AdminPanel({}: AdminPanelProps) {
             <TabsList className="grid w-full grid-cols-2 text-xs md:text-sm">
               <TabsTrigger value="all-users" className="text-xs md:text-sm">All Users</TabsTrigger>
               <TabsTrigger value="admins" className="text-xs md:text-sm">
-                <span className="hidden sm:inline">Administrators ({mockAdmins.length})</span>
-                <span className="sm:hidden">Admins ({mockAdmins.length})</span>
+                <span className="hidden sm:inline">Administrators ({admins.length})</span>
+                <span className="sm:hidden">Admins ({admins.length})</span>
               </TabsTrigger>
             </TabsList>
 
@@ -1400,7 +2034,7 @@ export function AdminPanel({}: AdminPanelProps) {
                 <CardContent style={{ padding: '0', flex: '1', overflow: 'hidden' }}>
                   <div className="overflow-x-auto h-full">
                     <UserManagementTable
-                      users={mockUsers}
+                      users={transformedUsers}
                       onEditUser={handleManageUser}
                       type="users"
                     />
@@ -1415,13 +2049,9 @@ export function AdminPanel({}: AdminPanelProps) {
             <CardContent style={{ padding: '0', flex: '1', overflow: 'hidden' }}>
               <div className="overflow-x-auto h-full">
                 <UserManagementTable
-                  users={mockAdmins}
+                  users={transformedAdmins}
                   onEditUser={handleEditAdmin}
-                  onDeleteUser={(admin) => {
-                    if (window.confirm(`Are you sure you want to remove admin privileges from ${admin.name}?`)) {
-                      toast.success(`Admin privileges removed from ${admin.name}`);
-                    }
-                  }}
+                  onDeleteUser={handleDemoteFromAdmin}
                   type="admins"
                 />
               </div>
@@ -1457,8 +2087,8 @@ export function AdminPanel({}: AdminPanelProps) {
                 <span className="sm:hidden">Discussions</span>
               </TabsTrigger>
               <TabsTrigger value="reports" className="text-xs md:text-sm">
-                <span className="hidden sm:inline">Community Reports ({mockCommunityReports.filter(r => r.status === 'pending').length})</span>
-                <span className="sm:hidden">Reports ({mockCommunityReports.filter(r => r.status === 'pending').length})</span>
+                <span className="hidden sm:inline">Community Reports (0)</span>
+                <span className="sm:hidden">Reports (0)</span>
               </TabsTrigger>
             </TabsList>
 
@@ -1474,78 +2104,86 @@ export function AdminPanel({}: AdminPanelProps) {
               </div>
 
               <div style={{ height: '600px', overflow: 'auto' }}>
-                <div className="space-y-2 p-2">
-                  {mockDiscussions.map((discussion) => (
-                    <Card 
-                      key={discussion.id}
-                      className="p-3 hover:shadow-md transition-shadow border-l-4"
-                      style={{ borderLeftColor: '#879656' }}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        {/* Left Side - Discussion Info */}
-                        <div className="flex-1 min-w-0 space-y-2">
-                          {/* Title and Popular Badge */}
-                          <div className="space-y-1">
-                            <div className="flex items-start gap-2">
-                              <h4 className="text-sm font-medium line-clamp-2 flex-1">{discussion.title}</h4>
-                              {discussion.isPopular && (
-                                <Badge variant="secondary" className="text-xs whitespace-nowrap flex-shrink-0">
-                                  🔥 Popular
-                                </Badge>
+                {isLoadingDiscussions ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    Loading discussions...
+                  </div>
+                ) : (
+                  <div className="space-y-2 p-2">
+                    {discussions.map((discussion) => (
+                      <Card 
+                        key={discussion.id}
+                        className="p-3 hover:shadow-md transition-shadow border-l-4"
+                        style={{ borderLeftColor: '#879656' }}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          {/* Left Side - Discussion Info */}
+                          <div className="flex-1 min-w-0 space-y-2">
+                            {/* Title and Popular Badge */}
+                            <div className="space-y-1">
+                              <div className="flex items-start gap-2">
+                                <h4 className="text-sm font-medium line-clamp-2 flex-1">{discussion.title}</h4>
+                                {discussion.replyCount >= 20 && (
+                                  <Badge variant="secondary" className="text-xs whitespace-nowrap flex-shrink-0">
+                                    🔥 Popular
+                                  </Badge>
+                                )}
+                              </div>
+                              {discussion.bookTitle && (
+                                <p className="text-xs text-muted-foreground">
+                                  Book: {discussion.bookTitle}
+                                </p>
                               )}
                             </div>
-                            <p className="text-xs text-muted-foreground">
-                              Book: {discussion.bookTitle}
-                            </p>
+
+                            {/* Meta Info Row */}
+                            <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                              <div className="flex items-center gap-1">
+                                <Avatar className="w-5 h-5">
+                                  <AvatarImage src={discussion.userAvatar} alt={discussion.userName} />
+                                  <AvatarFallback className="text-[10px]">{discussion.userName.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                                </Avatar>
+                                <span>{discussion.userName}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <MessageSquare className="w-3 h-3" />
+                                <span>{discussion.replyCount} replies</span>
+                              </div>
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0.5">{discussion.category}</Badge>
+                              <span>{getTimeAgo(discussion.createdAt)}</span>
+                            </div>
                           </div>
 
-                          {/* Meta Info Row */}
-                          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                            <div className="flex items-center gap-1">
-                              <Avatar className="w-5 h-5">
-                                <AvatarImage src={discussion.authorAvatar} alt={discussion.author} />
-                                <AvatarFallback className="text-[10px]">{discussion.author.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                              </Avatar>
-                              <span>{discussion.author}</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <MessageSquare className="w-3 h-3" />
-                              <span>{discussion.replies} replies</span>
-                            </div>
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0.5">{discussion.category}</Badge>
-                            <span>{discussion.lastActivity}</span>
+                          {/* Right Side - Action Buttons */}
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => handleEditDiscussion(discussion.id)}
+                              className="h-8 w-8 p-0"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button 
+                              variant="destructive" 
+                              size="sm"
+                              onClick={() => handleDeleteDiscussionClick(discussion.id, discussion.title)}
+                              className="h-8 w-8 p-0"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
                           </div>
                         </div>
+                      </Card>
+                    ))}
 
-                        {/* Right Side - Action Buttons */}
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleEditDiscussion(discussion.id)}
-                            className="h-8 w-8 p-0"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button 
-                            variant="destructive" 
-                            size="sm"
-                            onClick={() => handleDeleteDiscussion(discussion.id, discussion.title)}
-                            className="h-8 w-8 p-0"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
+                    {discussions.length === 0 && (
+                      <div className="text-center py-8 text-muted-foreground">
+                        No discussions found
                       </div>
-                    </Card>
-                  ))}
-
-                  {mockDiscussions.length === 0 && (
-                    <div className="text-center py-8 text-muted-foreground">
-                      No discussions found
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
             </TabsContent>
 

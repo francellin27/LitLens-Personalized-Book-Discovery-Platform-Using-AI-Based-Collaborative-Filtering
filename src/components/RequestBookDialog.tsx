@@ -12,6 +12,8 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { toast } from "sonner@2.0.3";
+import { useAuth } from "../lib/auth-supabase";
+import { createBookRequest } from "../lib/supabase-services";
 
 interface RequestBookDialogProps {
   open: boolean;
@@ -19,12 +21,19 @@ interface RequestBookDialogProps {
 }
 
 export function RequestBookDialog({ open, onOpenChange }: RequestBookDialogProps) {
+  const { user } = useAuth();
   const [bookTitle, setBookTitle] = useState("");
   const [author, setAuthor] = useState("");
   const [isbn, setIsbn] = useState("");
   const [additionalNotes, setAdditionalNotes] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (!user) {
+      toast.error("You must be logged in to request a book");
+      return;
+    }
+
     if (!bookTitle.trim()) {
       toast.error("Please enter a book title");
       return;
@@ -35,15 +44,35 @@ export function RequestBookDialog({ open, onOpenChange }: RequestBookDialogProps
       return;
     }
 
-    // Simulate request submission
-    toast.success("Book request submitted successfully!");
-    
-    // Reset form and close dialog
-    setBookTitle("");
-    setAuthor("");
-    setIsbn("");
-    setAdditionalNotes("");
-    onOpenChange(false);
+    setIsSubmitting(true);
+
+    try {
+      const request = await createBookRequest(
+        user.id,
+        bookTitle.trim(),
+        author.trim(),
+        isbn.trim() || undefined,
+        additionalNotes.trim() || undefined
+      );
+
+      if (request) {
+        toast.success("Book request submitted successfully! We'll review it soon.");
+        
+        // Reset form and close dialog
+        setBookTitle("");
+        setAuthor("");
+        setIsbn("");
+        setAdditionalNotes("");
+        onOpenChange(false);
+      } else {
+        toast.error("Failed to submit book request. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error submitting book request:", error);
+      toast.error("Failed to submit book request. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCancel = () => {
@@ -112,11 +141,11 @@ export function RequestBookDialog({ open, onOpenChange }: RequestBookDialogProps
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={handleCancel}>
+          <Button variant="outline" onClick={handleCancel} disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit}>
-            Submit Request
+          <Button onClick={handleSubmit} disabled={isSubmitting}>
+            {isSubmitting ? "Submitting..." : "Submit Request"}
           </Button>
         </DialogFooter>
       </DialogContent>

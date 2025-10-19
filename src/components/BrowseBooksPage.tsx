@@ -5,6 +5,7 @@ import { SearchFilters } from "./SearchFilters";
 import type { SearchFilters as SearchFiltersType } from "./SearchFilters";
 import { RequestBookDialog } from "./RequestBookDialog";
 import { StarRating } from "./StarRating";
+import { useBooks } from "../lib/hooks/useSupabaseBooks";
 
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
@@ -12,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Separator } from "./ui/separator";
 import { Badge } from "./ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { bookData, Book } from "../lib/bookData";
+import { Book } from "../lib/bookData";
 
 interface BrowseBooksPageProps {
   onBookSelect: (book: Book) => void;
@@ -39,17 +40,20 @@ export function BrowseBooksPage({ onBookSelect, onViewUser }: BrowseBooksPagePro
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Fetch all books from Supabase
+  const { books: allBooks, loading: booksLoading } = useBooks({ limit: 1000 });
+
   // Search suggestions (only based on search query, no other filters)
   const searchSuggestions = useMemo(() => {
-    if (!searchQuery.trim()) return [];
+    if (!searchQuery.trim() || booksLoading) return [];
     
-    return bookData.filter((book) => {
+    return allBooks.filter((book) => {
       const query = searchQuery.toLowerCase();
       return book.title.toLowerCase().includes(query) ||
              book.author.toLowerCase().includes(query) ||
              book.genre.some(g => g.toLowerCase().includes(query));
     }).slice(0, 8); // Limit to 8 suggestions
-  }, [searchQuery]);
+  }, [searchQuery, allBooks, booksLoading]);
 
   // Handle clicks outside to close suggestions
   useEffect(() => {
@@ -65,7 +69,9 @@ export function BrowseBooksPage({ onBookSelect, onViewUser }: BrowseBooksPagePro
 
   // Filter and sort books
   const filteredBooks = useMemo(() => {
-    let filtered = bookData.filter(book => {
+    if (booksLoading) return [];
+    
+    let filtered = allBooks.filter(book => {
       // Search query filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
@@ -147,7 +153,7 @@ export function BrowseBooksPage({ onBookSelect, onViewUser }: BrowseBooksPagePro
     });
 
     return filtered;
-  }, [searchQuery, selectedFilters, sortBy]);
+  }, [searchQuery, selectedFilters, sortBy, allBooks, booksLoading]);
 
 
 

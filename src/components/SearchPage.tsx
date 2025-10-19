@@ -2,12 +2,14 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { BookModal } from './BookModal';
 import { BookGrid } from './BookGrid';
 import { SearchFilters, SearchFilters as FilterType } from './SearchFilters';
-import { MOCK_BOOKS, Book } from '../lib/bookData';
+import { Book } from '../lib/bookData';
+import { useBooks } from '../lib/hooks/useSupabaseBooks';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Search, Filter, BookOpen } from 'lucide-react';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from './ui/sheet';
 import { StarRating } from './StarRating';
+import { RequestBookDialog } from './RequestBookDialog';
 
 interface SearchPageProps {
   initialQuery?: string;
@@ -27,23 +29,29 @@ export function SearchPage({ initialQuery = '', onBookSelect, onViewUser }: Sear
   });
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(-1);
+  const [showRequestBookDialog, setShowRequestBookDialog] = useState(false);
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Fetch all books from Supabase
+  const { books: allBooks, loading: booksLoading } = useBooks({ limit: 1000 });
+
   // Search suggestions (only based on search query, no other filters)
   const searchSuggestions = useMemo(() => {
-    if (!searchQuery.trim()) return [];
+    if (!searchQuery.trim() || booksLoading) return [];
     
-    return MOCK_BOOKS.filter((book) => {
+    return allBooks.filter((book) => {
       const query = searchQuery.toLowerCase();
       return book.title.toLowerCase().includes(query) ||
              book.author.toLowerCase().includes(query) ||
              book.genre.some(g => g.toLowerCase().includes(query));
     }).slice(0, 8); // Limit to 8 suggestions
-  }, [searchQuery]);
+  }, [searchQuery, allBooks, booksLoading]);
 
   const filteredBooks = useMemo(() => {
-    return MOCK_BOOKS.filter((book) => {
+    if (booksLoading) return [];
+    
+    return allBooks.filter((book) => {
       // Search query filter
       const matchesSearch = searchQuery === '' || 
         book.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -87,7 +95,7 @@ export function SearchPage({ initialQuery = '', onBookSelect, onViewUser }: Sear
       return matchesSearch && matchesGenre && matchesAuthor && 
              matchesYear && matchesRating && matchesLanguage && matchesPublisher;
     });
-  }, [searchQuery, filters]);
+  }, [searchQuery, filters, allBooks, booksLoading]);
 
   // Handle clicks outside to close suggestions
   useEffect(() => {
@@ -261,20 +269,32 @@ export function SearchPage({ initialQuery = '', onBookSelect, onViewUser }: Sear
         </div>
 
         {filteredBooks.length === 0 ? (
-          <div className="text-center py-12">
+          <div className="text-center py-12 space-y-4">
             <p className="text-muted-foreground text-lg">
               No books found matching your search criteria
             </p>
-            <p className="text-muted-foreground text-sm mt-2">
+            <p className="text-muted-foreground text-sm">
               Try adjusting your filters or search terms
             </p>
+            <div className="pt-4">
+              <Button 
+                variant="outline"
+                onClick={() => setShowRequestBookDialog(true)}
+              >
+                Can't find your book? Request it here
+              </Button>
+            </div>
           </div>
         ) : (
           <BookGrid books={filteredBooks} onBookClick={handleBookClick} />
         )}
       </div>
 
-
+      {/* Request Book Dialog */}
+      <RequestBookDialog 
+        open={showRequestBookDialog} 
+        onOpenChange={setShowRequestBookDialog}
+      />
     </div>
   );
 }

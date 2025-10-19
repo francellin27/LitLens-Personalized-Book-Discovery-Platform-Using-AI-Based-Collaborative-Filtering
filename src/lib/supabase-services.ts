@@ -190,6 +190,41 @@ export async function deleteBook(bookId: string): Promise<boolean> {
 
 // ============ REVIEWS SERVICE ============
 
+export async function fetchAllReviews(): Promise<Review[]> {
+  try {
+    const { data, error } = await supabase
+      .from('reviews')
+      .select(`
+        *,
+        user:profiles!reviews_user_id_fkey(name, username, avatar)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching all reviews:', error);
+      return [];
+    }
+
+    return data.map(review => ({
+      id: review.id,
+      bookId: review.book_id,
+      userId: review.user_id,
+      userName: review.user?.name || 'Unknown User',
+      userAvatar: review.user?.avatar,
+      rating: review.rating,
+      title: review.title,
+      content: review.content,
+      date: review.created_at,
+      helpful: review.helpful,
+      isReported: review.is_reported,
+      reportCount: review.report_count
+    }));
+  } catch (error) {
+    console.error('Error fetching all reviews:', error);
+    return [];
+  }
+}
+
 export async function fetchReviewsForBook(bookId: string): Promise<Review[]> {
   try {
     const { data, error } = await supabase
@@ -324,11 +359,13 @@ export async function getUserBookStatus(userId: string, bookId: string): Promise
   isWantToRead?: boolean;
   isFavorite?: boolean;
   userRating?: number;
+  startDate?: string;
+  finishDate?: string;
 }> {
   try {
     const { data, error } = await supabase
       .from('user_book_status')
-      .select('status, user_rating')
+      .select('status, user_rating, start_date, finish_date')
       .eq('user_id', userId)
       .eq('book_id', bookId);
 
@@ -342,6 +379,8 @@ export async function getUserBookStatus(userId: string, bookId: string): Promise
       if (item.status === 'want_to_read') acc.isWantToRead = true;
       if (item.status === 'favorite') acc.isFavorite = true;
       if (item.user_rating) acc.userRating = item.user_rating;
+      if (item.start_date) acc.startDate = item.start_date;
+      if (item.finish_date) acc.finishDate = item.finish_date;
       return acc;
     }, {} as any);
 
@@ -356,16 +395,34 @@ export async function setUserBookStatus(
   userId: string,
   bookId: string,
   status: 'reading' | 'completed' | 'want_to_read' | 'favorite',
-  userRating?: number
+  userRating?: number,
+  startDate?: Date,
+  finishDate?: Date
 ): Promise<boolean> {
   try {
+    const updateData: any = {
+      user_id: userId,
+      book_id: bookId,
+      status,
+    };
+
+    if (userRating !== undefined) {
+      updateData.user_rating = userRating;
+    }
+
+    if (startDate !== undefined) {
+      updateData.start_date = startDate.toISOString().split('T')[0];
+    }
+
+    if (finishDate !== undefined) {
+      updateData.finish_date = finishDate.toISOString().split('T')[0];
+    }
+
     const { error } = await supabase
       .from('user_book_status')
-      .upsert({
-        user_id: userId,
-        book_id: bookId,
-        status,
-        user_rating: userRating,
+      .upsert(updateData, {
+        onConflict: 'user_id,book_id,status',
+        ignoreDuplicates: false
       });
 
     if (error) {
@@ -401,6 +458,65 @@ export async function removeUserBookStatus(
     return true;
   } catch (error) {
     console.error('Error removing user book status:', error);
+    return false;
+  }
+}
+
+export async function logReadingDates(
+  userId: string,
+  bookId: string,
+  startDate: Date,
+  finishDate?: Date | null
+): Promise<boolean> {
+  try {
+    // If finish date is provided, set status to completed, otherwise reading
+    const status = finishDate ? 'completed' : 'reading';
+    
+    // First, check if the start_date column exists by attempting a simple query
+    const { error: checkError } = await supabase
+      .from('user_book_status')
+      .select('start_date')
+      .limit(1);
+
+    // Build update data - only include date fields if columns exist
+    const updateData: any = {
+      user_id: userId,
+      book_id: bookId,
+      status,
+    };
+
+    // If the column exists (no error), include the dates
+    if (!checkError) {
+      updateData.start_date = startDate.toISOString().split('T')[0];
+      if (finishDate) {
+        updateData.finish_date = finishDate.toISOString().split('T')[0];
+      }
+    } else {
+      console.warn('Date columns not found in user_book_status table. Skipping date logging. Run migration 003_add_reading_dates.sql to enable date tracking.');
+      
+      // Show migration instructions in console
+      if (typeof window !== 'undefined') {
+        import('../lib/migrationHelper').then(({ logMigrationInstructions }) => {
+          logMigrationInstructions();
+        });
+      }
+    }
+
+    const { error } = await supabase
+      .from('user_book_status')
+      .upsert(updateData, {
+        onConflict: 'user_id,book_id,status',
+        ignoreDuplicates: false
+      });
+
+    if (error) {
+      console.error('Error logging reading dates:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error logging reading dates:', error);
     return false;
   }
 }
@@ -529,6 +645,593 @@ export async function removeBookFromReadingList(readingListId: string, bookId: s
     return true;
   } catch (error) {
     console.error('Error removing book from reading list:', error);
+    return false;
+  }
+}
+
+// ============ USER MANAGEMENT SERVICE ============
+
+export interface UserProfile {
+  id: string;
+  name: string;
+  username: string;
+  email: string;
+  role: 'user' | 'admin';
+  bio?: string;
+  favoriteGenres: string[];
+  createdAt: string;
+  booksRead: number;
+}
+
+export async function fetchAllUsers(roleFilter?: 'user' | 'admin'): Promise<UserProfile[]> {
+  try {
+    let query = supabase
+      .from('profiles')
+      .select(`
+        *,
+        books_read:user_book_status(count)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (roleFilter) {
+      query = query.eq('role', roleFilter);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Error fetching users:', error);
+      return [];
+    }
+
+    return data.map(profile => ({
+      id: profile.id,
+      name: profile.name || 'Unknown User',
+      username: profile.username,
+      email: profile.email || '',
+      role: profile.role,
+      bio: profile.bio || undefined,
+      favoriteGenres: profile.favorite_genres || [],
+      createdAt: profile.created_at,
+      booksRead: profile.books_read?.[0]?.count || 0,
+    }));
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    return [];
+  }
+}
+
+export async function updateUserRole(userId: string, role: 'user' | 'admin'): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role })
+      .eq('id', userId);
+
+    if (error) {
+      console.error('Error updating user role:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error updating user role:', error);
+    return false;
+  }
+}
+
+export async function updateUserProfile(
+  userId: string,
+  updates: Partial<{
+    name: string;
+    username: string;
+    bio: string;
+    favoriteGenres: string[];
+  }>
+): Promise<boolean> {
+  try {
+    const dbUpdates: any = {};
+    
+    if (updates.name !== undefined) dbUpdates.name = updates.name;
+    if (updates.username !== undefined) dbUpdates.username = updates.username;
+    if (updates.bio !== undefined) dbUpdates.bio = updates.bio;
+    if (updates.favoriteGenres !== undefined) dbUpdates.favorite_genres = updates.favoriteGenres;
+
+    const { error } = await supabase
+      .from('profiles')
+      .update(dbUpdates)
+      .eq('id', userId);
+
+    if (error) {
+      console.error('Error updating user profile:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error updating user profile:', error);
+    return false;
+  }
+}
+
+export async function deleteUserAccount(userId: string): Promise<boolean> {
+  try {
+    // Note: This only deletes the profile. The auth.users entry should be handled by Supabase Auth
+    // or through the admin API if needed
+    const { error } = await supabase
+      .from('profiles')
+      .delete()
+      .eq('id', userId);
+
+    if (error) {
+      console.error('Error deleting user account:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error deleting user account:', error);
+    return false;
+  }
+}
+
+// ============ BOOK REQUESTS SERVICE ============
+
+export interface BookRequest {
+  id: string;
+  userId: string;
+  userName?: string;
+  title: string;
+  author: string;
+  isbn?: string;
+  additionalNotes?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function fetchBookRequests(status?: 'pending' | 'approved' | 'rejected'): Promise<BookRequest[]> {
+  try {
+    let query = supabase
+      .from('book_requests')
+      .select(`
+        *,
+        user:profiles!book_requests_user_id_fkey(name, username)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (status) {
+      query = query.eq('status', status);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Error fetching book requests:', error);
+      return [];
+    }
+
+    return data.map(request => ({
+      id: request.id,
+      userId: request.user_id,
+      userName: request.user?.name || 'Unknown User',
+      title: request.title,
+      author: request.author,
+      isbn: request.isbn || undefined,
+      additionalNotes: request.additional_notes || undefined,
+      status: request.status,
+      createdAt: request.created_at,
+      updatedAt: request.updated_at,
+    }));
+  } catch (error) {
+    console.error('Error fetching book requests:', error);
+    return [];
+  }
+}
+
+export async function createBookRequest(
+  userId: string,
+  title: string,
+  author: string,
+  isbn?: string,
+  additionalNotes?: string
+): Promise<BookRequest | null> {
+  try {
+    const { data, error } = await supabase
+      .from('book_requests')
+      .insert({
+        user_id: userId,
+        title,
+        author,
+        isbn: isbn || null,
+        additional_notes: additionalNotes || null,
+        status: 'pending',
+      })
+      .select()
+      .single();
+
+    if (error || !data) {
+      console.error('Error creating book request:', error);
+      return null;
+    }
+
+    // Fetch user info
+    const { data: userData } = await supabase
+      .from('profiles')
+      .select('name')
+      .eq('id', userId)
+      .single();
+
+    return {
+      id: data.id,
+      userId: data.user_id,
+      userName: userData?.name || 'Unknown User',
+      title: data.title,
+      author: data.author,
+      isbn: data.isbn || undefined,
+      additionalNotes: data.additional_notes || undefined,
+      status: data.status,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    };
+  } catch (error) {
+    console.error('Error creating book request:', error);
+    return null;
+  }
+}
+
+export async function updateBookRequestStatus(
+  requestId: string,
+  status: 'pending' | 'approved' | 'rejected'
+): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('book_requests')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', requestId);
+
+    if (error) {
+      console.error('Error updating book request status:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error updating book request status:', error);
+    return false;
+  }
+}
+
+export async function deleteBookRequest(requestId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('book_requests')
+      .delete()
+      .eq('id', requestId);
+
+    if (error) {
+      console.error('Error deleting book request:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error deleting book request:', error);
+    return false;
+  }
+}
+
+// ============ DISCUSSIONS SERVICE ============
+
+export interface Discussion {
+  id: string;
+  userId: string;
+  userName: string;
+  userAvatar?: string;
+  title: string;
+  content: string;
+  category: string;
+  bookId?: string;
+  bookTitle?: string;
+  bookCover?: string;
+  replyCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function fetchAllDiscussions(): Promise<Discussion[]> {
+  try {
+    const { data, error } = await supabase
+      .from('discussions')
+      .select(`
+        *,
+        user:profiles!discussions_author_id_fkey(name, username, avatar),
+        book:books(title, cover),
+        replies:discussion_replies(count)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching discussions:', error);
+      return [];
+    }
+
+    return data.map(discussion => ({
+      id: discussion.id,
+      userId: discussion.author_id,
+      userName: discussion.user?.name || 'Unknown User',
+      userAvatar: discussion.user?.avatar,
+      title: discussion.title,
+      content: discussion.content,
+      category: discussion.category,
+      bookId: discussion.book_id || undefined,
+      bookTitle: discussion.book?.title || undefined,
+      bookCover: discussion.book?.cover || undefined,
+      replyCount: discussion.replies?.[0]?.count || 0,
+      createdAt: discussion.created_at,
+      updatedAt: discussion.updated_at,
+    }));
+  } catch (error) {
+    console.error('Error fetching discussions:', error);
+    return [];
+  }
+}
+
+export async function fetchDiscussionById(discussionId: string): Promise<Discussion | null> {
+  try {
+    const { data, error } = await supabase
+      .from('discussions')
+      .select(`
+        *,
+        user:profiles!discussions_author_id_fkey(name, username, avatar),
+        book:books(title, cover),
+        replies:discussion_replies(count)
+      `)
+      .eq('id', discussionId)
+      .single();
+
+    if (error || !data) {
+      console.error('Error fetching discussion:', error);
+      return null;
+    }
+
+    return {
+      id: data.id,
+      userId: data.author_id,
+      userName: data.user?.name || 'Unknown User',
+      userAvatar: data.user?.avatar,
+      title: data.title,
+      content: data.content,
+      category: data.category,
+      bookId: data.book_id || undefined,
+      bookTitle: data.book?.title || undefined,
+      bookCover: data.book?.cover || undefined,
+      replyCount: data.replies?.[0]?.count || 0,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    };
+  } catch (error) {
+    console.error('Error fetching discussion:', error);
+    return null;
+  }
+}
+
+export async function createDiscussion(
+  userId: string,
+  title: string,
+  content: string,
+  category: string,
+  bookId?: string
+): Promise<Discussion | null> {
+  try {
+    const { data, error } = await supabase
+      .from('discussions')
+      .insert({
+        author_id: userId,
+        title,
+        content,
+        category,
+        book_id: bookId || null,
+      })
+      .select()
+      .single();
+
+    if (error || !data) {
+      console.error('Error creating discussion:', error);
+      return null;
+    }
+
+    // Fetch user and book info
+    const { data: userData } = await supabase
+      .from('profiles')
+      .select('name, username, avatar')
+      .eq('id', userId)
+      .single();
+
+    let bookData = null;
+    if (bookId) {
+      const { data: bookResult } = await supabase
+        .from('books')
+        .select('title, cover')
+        .eq('id', bookId)
+        .single();
+      bookData = bookResult;
+    }
+
+    return {
+      id: data.id,
+      userId: data.author_id,
+      userName: userData?.name || 'Unknown User',
+      userAvatar: userData?.avatar,
+      title: data.title,
+      content: data.content,
+      category: data.category,
+      bookId: data.book_id || undefined,
+      bookTitle: bookData?.title || undefined,
+      bookCover: bookData?.cover || undefined,
+      replyCount: 0,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    };
+  } catch (error) {
+    console.error('Error creating discussion:', error);
+    return null;
+  }
+}
+
+export async function updateDiscussion(
+  discussionId: string,
+  updates: Partial<{ title: string; content: string; category: string }>
+): Promise<boolean> {
+  try {
+    const dbUpdates: any = {};
+    
+    if (updates.title) dbUpdates.title = updates.title;
+    if (updates.content) dbUpdates.content = updates.content;
+    if (updates.category) dbUpdates.category = updates.category;
+    
+    dbUpdates.updated_at = new Date().toISOString();
+
+    const { error } = await supabase
+      .from('discussions')
+      .update(dbUpdates)
+      .eq('id', discussionId);
+
+    if (error) {
+      console.error('Error updating discussion:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error updating discussion:', error);
+    return false;
+  }
+}
+
+export async function deleteDiscussion(discussionId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('discussions')
+      .delete()
+      .eq('id', discussionId);
+
+    if (error) {
+      console.error('Error deleting discussion:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error deleting discussion:', error);
+    return false;
+  }
+}
+
+// ============ DISCUSSION REPLIES SERVICE ============
+
+export interface DiscussionReply {
+  id: string;
+  discussionId: string;
+  userId: string;
+  userName: string;
+  userAvatar?: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function fetchDiscussionReplies(discussionId: string): Promise<DiscussionReply[]> {
+  try {
+    const { data, error } = await supabase
+      .from('discussion_replies')
+      .select(`
+        *,
+        user:profiles!discussion_replies_author_id_fkey(name, username, avatar)
+      `)
+      .eq('discussion_id', discussionId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching discussion replies:', error);
+      return [];
+    }
+
+    return data.map(reply => ({
+      id: reply.id,
+      discussionId: reply.discussion_id,
+      userId: reply.author_id,
+      userName: reply.user?.name || 'Unknown User',
+      userAvatar: reply.user?.avatar,
+      content: reply.content,
+      createdAt: reply.created_at,
+      updatedAt: reply.updated_at,
+    }));
+  } catch (error) {
+    console.error('Error fetching discussion replies:', error);
+    return [];
+  }
+}
+
+export async function createDiscussionReply(
+  discussionId: string,
+  userId: string,
+  content: string
+): Promise<DiscussionReply | null> {
+  try {
+    const { data, error } = await supabase
+      .from('discussion_replies')
+      .insert({
+        discussion_id: discussionId,
+        author_id: userId,
+        content,
+      })
+      .select()
+      .single();
+
+    if (error || !data) {
+      console.error('Error creating discussion reply:', error);
+      return null;
+    }
+
+    // Fetch user info
+    const { data: userData } = await supabase
+      .from('profiles')
+      .select('name, username, avatar')
+      .eq('id', userId)
+      .single();
+
+    return {
+      id: data.id,
+      discussionId: data.discussion_id,
+      userId: data.author_id,
+      userName: userData?.name || 'Unknown User',
+      userAvatar: userData?.avatar,
+      content: data.content,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    };
+  } catch (error) {
+    console.error('Error creating discussion reply:', error);
+    return null;
+  }
+}
+
+export async function deleteDiscussionReply(replyId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('discussion_replies')
+      .delete()
+      .eq('id', replyId);
+
+    if (error) {
+      console.error('Error deleting discussion reply:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error deleting discussion reply:', error);
     return false;
   }
 }
