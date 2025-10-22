@@ -63,27 +63,15 @@ function AppContent() {
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, [currentPage, viewingUserId, viewingDiscussionId]);
 
+  // Set default page for admin users to admin panel
+  useEffect(() => {
+    if (user?.role === 'admin' && currentPage === 'home') {
+      setCurrentPage('admin');
+    }
+  }, [user?.role, currentPage]);
+
   if (!user) {
     return <Login />;
-  }
-
-  // For admin users, only allow admin panel access
-  if (user.role === 'admin') {
-    return (
-      <div className="min-h-screen bg-background flex flex-col overflow-x-hidden">
-        <Navigation
-          currentPage="admin"
-          onPageChange={() => {}}
-          user={user}
-        />
-
-        <main className="mx-auto px-4 sm:px-6 lg:px-12 xl:px-16 py-4 sm:py-6 lg:py-8 flex-1 max-w-[1600px] w-full">
-          <AdminPanel />
-        </main>
-
-        <Toaster />
-      </div>
-    );
   }
 
   const handleSearch = (query: string) => {
@@ -145,6 +133,8 @@ function AppContent() {
     }
 
     switch (currentPage) {
+      case "admin":
+        return <AdminPanel />;
       case "home":
         return (
           <HomePage

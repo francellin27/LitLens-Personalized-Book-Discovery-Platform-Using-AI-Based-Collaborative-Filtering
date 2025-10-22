@@ -1236,6 +1236,181 @@ export async function deleteDiscussionReply(replyId: string): Promise<boolean> {
   }
 }
 
+// ============ DISCUSSION REPORTS SERVICE ============
+
+export interface DiscussionReport {
+  id: string;
+  discussionId: string;
+  reporterId: string;
+  reporterName: string;
+  contentTitle: string;
+  contentType: 'Discussion' | 'Reply';
+  originalAuthor: string;
+  reason: 'Spam/Promotional' | 'Harassment' | 'Inappropriate Content' | 'Misinformation' | 'Off-topic' | 'Other';
+  description?: string;
+  status: 'pending' | 'resolved' | 'dismissed';
+  createdAt: string;
+  updatedAt: string;
+  resolvedBy?: string;
+  resolvedAt?: string;
+  adminNotes?: string;
+}
+
+export async function fetchAllDiscussionReports(status?: 'pending' | 'resolved' | 'dismissed'): Promise<DiscussionReport[]> {
+  try {
+    let query = supabase
+      .from('discussion_reports')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (status) {
+      query = query.eq('status', status);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Error fetching discussion reports:', error);
+      return [];
+    }
+
+    return data.map(report => ({
+      id: report.id,
+      discussionId: report.discussion_id,
+      reporterId: report.reporter_id,
+      reporterName: report.reporter_name,
+      contentTitle: report.content_title,
+      contentType: report.content_type,
+      originalAuthor: report.original_author,
+      reason: report.reason,
+      description: report.description || undefined,
+      status: report.status,
+      createdAt: report.created_at,
+      updatedAt: report.updated_at,
+      resolvedBy: report.resolved_by || undefined,
+      resolvedAt: report.resolved_at || undefined,
+      adminNotes: report.admin_notes || undefined,
+    }));
+  } catch (error) {
+    console.error('Error fetching discussion reports:', error);
+    return [];
+  }
+}
+
+export async function createDiscussionReport(
+  discussionId: string,
+  reporterId: string,
+  reporterName: string,
+  contentTitle: string,
+  contentType: 'Discussion' | 'Reply',
+  originalAuthor: string,
+  reason: DiscussionReport['reason'],
+  description?: string
+): Promise<DiscussionReport | null> {
+  try {
+    const { data, error } = await supabase
+      .from('discussion_reports')
+      .insert({
+        discussion_id: discussionId,
+        reporter_id: reporterId,
+        reporter_name: reporterName,
+        content_title: contentTitle,
+        content_type: contentType,
+        original_author: originalAuthor,
+        reason,
+        description: description || null,
+        status: 'pending',
+      })
+      .select()
+      .single();
+
+    if (error || !data) {
+      console.error('Error creating discussion report:', error);
+      return null;
+    }
+
+    return {
+      id: data.id,
+      discussionId: data.discussion_id,
+      reporterId: data.reporter_id,
+      reporterName: data.reporter_name,
+      contentTitle: data.content_title,
+      contentType: data.content_type,
+      originalAuthor: data.original_author,
+      reason: data.reason,
+      description: data.description || undefined,
+      status: data.status,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+      resolvedBy: data.resolved_by || undefined,
+      resolvedAt: data.resolved_at || undefined,
+      adminNotes: data.admin_notes || undefined,
+    };
+  } catch (error) {
+    console.error('Error creating discussion report:', error);
+    return null;
+  }
+}
+
+export async function updateDiscussionReportStatus(
+  reportId: string,
+  status: 'pending' | 'resolved' | 'dismissed',
+  resolvedBy?: string,
+  adminNotes?: string
+): Promise<boolean> {
+  try {
+    const updates: any = {
+      status,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (status === 'resolved' || status === 'dismissed') {
+      updates.resolved_at = new Date().toISOString();
+      if (resolvedBy) {
+        updates.resolved_by = resolvedBy;
+      }
+    }
+
+    if (adminNotes) {
+      updates.admin_notes = adminNotes;
+    }
+
+    const { error } = await supabase
+      .from('discussion_reports')
+      .update(updates)
+      .eq('id', reportId);
+
+    if (error) {
+      console.error('Error updating discussion report status:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error updating discussion report status:', error);
+    return false;
+  }
+}
+
+export async function deleteDiscussionReport(reportId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('discussion_reports')
+      .delete()
+      .eq('id', reportId);
+
+    if (error) {
+      console.error('Error deleting discussion report:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error deleting discussion report:', error);
+    return false;
+  }
+}
+
 // ============ HELPER FUNCTIONS ============
 
 function transformDbBookToBook(dbBook: any): Book {

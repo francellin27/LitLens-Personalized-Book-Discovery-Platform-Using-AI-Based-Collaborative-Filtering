@@ -21,7 +21,11 @@ import {
   fetchAllDiscussions,
   updateDiscussion,
   deleteDiscussion,
-  type Discussion
+  type Discussion,
+  fetchAllDiscussionReports,
+  updateDiscussionReportStatus,
+  deleteDiscussionReport,
+  type DiscussionReport
 } from '../lib/supabase-services';
 import { 
   fetchAllAnalytics,
@@ -48,6 +52,7 @@ import { toast } from 'sonner@2.0.3';
 import { StarRating } from './StarRating';
 import { ReportedReviewsTable } from './ReportedReviewsTable';
 import { UserManagementTable } from './UserManagementTable';
+import { PrintBookReport } from './PrintBookReport';
 import { LineChart as RechartsLine, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 interface AdminPanelProps {}
@@ -61,11 +66,13 @@ export function AdminPanel({}: AdminPanelProps) {
   const [admins, setAdmins] = useState<UserProfile[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [discussions, setDiscussions] = useState<Discussion[]>([]);
+  const [discussionReports, setDiscussionReports] = useState<DiscussionReport[]>([]);
   const [isLoadingBooks, setIsLoadingBooks] = useState(true);
   const [isLoadingRequests, setIsLoadingRequests] = useState(true);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const [isLoadingReviews, setIsLoadingReviews] = useState(true);
   const [isLoadingDiscussions, setIsLoadingDiscussions] = useState(true);
+  const [isLoadingReports, setIsLoadingReports] = useState(true);
   
   // Analytics data state
   const [analyticsData, setAnalyticsData] = useState<{
@@ -115,6 +122,11 @@ export function AdminPanel({}: AdminPanelProps) {
   // Load discussions from Supabase on mount
   useEffect(() => {
     loadDiscussions();
+  }, []);
+
+  // Load discussion reports from Supabase on mount
+  useEffect(() => {
+    loadDiscussionReports();
   }, []);
 
   // Load analytics data on mount
@@ -209,6 +221,28 @@ export function AdminPanel({}: AdminPanelProps) {
       }
     } finally {
       setIsLoadingDiscussions(false);
+    }
+  };
+
+  const loadDiscussionReports = async () => {
+    setIsLoadingReports(true);
+    try {
+      const fetchedReports = await fetchAllDiscussionReports();
+      setDiscussionReports(fetchedReports);
+    } catch (error: any) {
+      console.error('Error loading discussion reports:', error);
+      
+      // Check if error is due to missing table
+      if (error?.code === 'PGRST200' || error?.message?.includes('discussion_reports')) {
+        toast.error('Database migration needed', {
+          description: 'Run migration 006_discussion_reports.sql in Supabase SQL Editor',
+          duration: 10000,
+        });
+      } else {
+        toast.error('Failed to load discussion reports');
+      }
+    } finally {
+      setIsLoadingReports(false);
     }
   };
   
@@ -320,30 +354,8 @@ export function AdminPanel({}: AdminPanelProps) {
     return `${Math.floor(seconds / 604800)} weeks ago`;
   };
 
-  const mockCommunityReports = [
-    {
-      id: 'report_1',
-      contentTitle: 'Inappropriate comment about author',
-      contentType: 'Discussion Reply',
-      originalAuthor: 'UserABC123',
-      reporterName: 'Sarah Johnson',
-      reason: 'Harassment',
-      description: 'User made personal attacks against the author in their discussion reply.',
-      date: '2024-10-06T14:30:00Z',
-      status: 'pending'
-    },
-    {
-      id: 'report_2',
-      contentTitle: 'Spam links in book recommendation',
-      contentType: 'Discussion Post',
-      originalAuthor: 'SpamUser456',
-      reporterName: 'Michael Chen',
-      reason: 'Spam/Promotional',
-      description: 'Post contains multiple unrelated promotional links.',
-      date: '2024-10-05T09:15:00Z',
-      status: 'pending'
-    }
-  ];
+  // Get pending reports count
+  const pendingReportsCount = discussionReports.filter(r => r.status === 'pending').length;
 
   const mockTopContributors = [
     {
@@ -936,6 +948,36 @@ export function AdminPanel({}: AdminPanelProps) {
     }
   };
 
+  const handleResolveCommunityReport = async (reportId: string, contentTitle: string) => {
+    try {
+      const success = await updateDiscussionReportStatus(reportId, 'resolved');
+      if (success) {
+        await loadDiscussionReports(); // Reload reports from database
+        toast.success(`Report for "${contentTitle}" resolved successfully!`);
+      } else {
+        toast.error('Failed to resolve report');
+      }
+    } catch (error) {
+      console.error('Error resolving report:', error);
+      toast.error('Failed to resolve report');
+    }
+  };
+
+  const handleDismissCommunityReport = async (reportId: string, contentTitle: string) => {
+    try {
+      const success = await updateDiscussionReportStatus(reportId, 'dismissed');
+      if (success) {
+        await loadDiscussionReports(); // Reload reports from database
+        toast.success(`Report for "${contentTitle}" dismissed`);
+      } else {
+        toast.error('Failed to dismiss report');
+      }
+    } catch (error) {
+      console.error('Error dismissing report:', error);
+      toast.error('Failed to dismiss report');
+    }
+  };
+
   const handleUpdateReportStatus = async (reportId: string, status: ReviewReport['status']) => {
     await updateReportStatus(reportId, status);
     // Reload reports after update
@@ -1006,16 +1048,6 @@ export function AdminPanel({}: AdminPanelProps) {
   const handleViewCommunityReport = (reportId: string) => {
     toast.success(`Viewing community report: ${reportId}`);
     // Here you would open the report details dialog
-  };
-
-  const handleResolveCommunityReport = (reportId: string, contentTitle: string) => {
-    toast.success(`Community report for "${contentTitle}" has been resolved`);
-    // Here you would update the report status in the backend
-  };
-
-  const handleDismissCommunityReport = (reportId: string, contentTitle: string) => {
-    toast.success(`Community report for "${contentTitle}" has been dismissed`);
-    // Here you would update the report status in the backend
   };
 
   const handleCreateAnnouncement = () => {
@@ -1287,7 +1319,7 @@ export function AdminPanel({}: AdminPanelProps) {
           </CardHeader>
           <CardContent className="px-2 md:px-6 pb-3 md:pb-6">
             <div className="space-y-0.5 md:space-y-1">
-              <div className="text-2xl md:text-3xl" style={{ color: '#535050' }}>{mockDiscussions.length}</div>
+              <div className="text-2xl md:text-3xl" style={{ color: '#535050' }}>{discussions.length}</div>
               <div className="hidden md:flex items-center gap-1 text-xs text-green-600">
                 <TrendingUp className="w-3 h-3" />
                 <span>+22% from last month</span>
@@ -2191,7 +2223,7 @@ export function AdminPanel({}: AdminPanelProps) {
             <TabsContent value="reports" className="space-y-4">
               <div style={{ height: '600px', overflow: 'auto' }}>
                 <div className="space-y-2 p-2">
-                  {mockCommunityReports.map((report) => (
+                  {discussionReports.map((report) => (
                     <Card 
                       key={report.id}
                       className="p-4 border-l-4"
@@ -2235,7 +2267,7 @@ export function AdminPanel({}: AdminPanelProps) {
                           </div>
                           <div>
                             <span className="text-muted-foreground">Date:</span>
-                            <p className="font-medium mt-0.5">{new Date(report.date).toLocaleDateString()}</p>
+                            <p className="font-medium mt-0.5">{new Date(report.createdAt).toLocaleDateString()}</p>
                           </div>
                         </div>
 
@@ -2266,7 +2298,7 @@ export function AdminPanel({}: AdminPanelProps) {
                     </Card>
                   ))}
 
-                  {mockCommunityReports.length === 0 && (
+                  {discussionReports.length === 0 && (
                     <div className="text-center py-8 text-muted-foreground">
                       No community reports found
                     </div>
@@ -2283,10 +2315,20 @@ export function AdminPanel({}: AdminPanelProps) {
       <Dialog open={isEditingBook} onOpenChange={setIsEditingBook}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Edit Book</DialogTitle>
-            <DialogDescription>
-              Update the book information below. Make sure all required fields are filled correctly.
-            </DialogDescription>
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1">
+                <DialogTitle>Edit Book</DialogTitle>
+                <DialogDescription>
+                  Update the book information below. Make sure all required fields are filled correctly.
+                </DialogDescription>
+              </div>
+              {selectedBook && (
+                <PrintBookReport 
+                  book={selectedBook}
+                  reviews={allReviews.filter(r => r.bookId === selectedBook.id)}
+                />
+              )}
+            </div>
           </DialogHeader>
           <BookForm isEdit={true} />
         </DialogContent>
