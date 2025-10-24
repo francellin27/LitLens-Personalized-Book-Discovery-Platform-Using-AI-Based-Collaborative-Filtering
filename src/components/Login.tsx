@@ -27,11 +27,16 @@ export function Login() {
       return;
     }
 
-    const success = await login(loginEmail, loginPassword);
-    if (!success) {
-      toast.error('Invalid email or password');
-    } else {
-      toast.success('Welcome back!');
+    try {
+      const success = await login(loginEmail, loginPassword);
+      if (!success) {
+        toast.error('Invalid email or password');
+      } else {
+        toast.success('Welcome back!');
+      }
+    } catch (error: any) {
+      // Handle connection errors
+      toast.error(error.message || 'Unable to connect. Please check your internet connection.');
     }
   };
 

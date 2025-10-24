@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../lib/auth-supabase';
 import { BookModal } from './BookModal';
 import { BookCard } from './BookCard';
@@ -14,12 +14,14 @@ import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { StarRating } from './StarRating';
 import { ImageWithFallback } from './figma/ImageWithFallback';
-import { BookOpen, Heart, List, Settings, Star, Calendar, Edit, Save, X, Camera, Clock, LogOut, Trash2, Eye, Database, HelpCircle, Trophy, Target, TrendingUp, Award } from 'lucide-react';
+import { BookOpen, Heart, List, Settings, Star, Calendar, Edit, Save, X, Camera, Clock, LogOut, Trash2, Eye, Database, HelpCircle, Trophy, Target, TrendingUp, Award, Upload } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { Switch } from './ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { supabase } from '../utils/supabase/client';
 import { Progress } from './ui/progress';
+import { updateUserProfile } from '../lib/supabase-services';
+import { StorageMigrationBanner } from './StorageMigrationBanner';
 
 interface UserProfileProps {
   onViewUser?: (userId: string) => void;
@@ -45,6 +47,11 @@ export function UserProfile({ onViewUser, onPageChange }: UserProfileProps) {
   });
   const [userReviews, setUserReviews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Photo upload state
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [tempAvatarUrl, setTempAvatarUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Mock last profile update date - in a real app, this would come from the backend
   const lastProfileUpdate = new Date('2024-12-01'); // Example date
@@ -128,12 +135,73 @@ export function UserProfile({ onViewUser, onPageChange }: UserProfileProps) {
 
   const closeBookModal = () => {
     setSelectedBook(null);
+    // Refresh data when closing the modal to reflect any status changes
+    setRefreshKey(prev => prev + 1);
   };
 
   const handleSaveProfile = () => {
     // In a real app, this would update the user profile via API
     toast.success('Profile updated successfully!');
     setIsEditing(false);
+  };
+
+  const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !user?.id) return;
+
+    // Validate file type
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      toast.error('Please upload a JPG, PNG, or WebP image');
+      return;
+    }
+
+    // Validate file size (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File size must be less than 5MB');
+      return;
+    }
+
+    setUploadingPhoto(true);
+
+    try {
+      // Upload photo to Supabase Storage
+      const photoUrl = await uploadProfilePhoto(user.id, file);
+
+      if (!photoUrl) {
+        toast.error('Failed to upload photo. Please try again.');
+        setUploadingPhoto(false);
+        return;
+      }
+
+      // Update user profile with new avatar URL
+      const success = await updateUserProfile(user.id, { avatar: photoUrl });
+
+      if (success) {
+        // Update local state
+        setTempAvatarUrl(photoUrl);
+        
+        // Refresh the auth context to update the user object
+        setRefreshKey(prev => prev + 1);
+        
+        toast.success('Profile photo updated successfully!');
+      } else {
+        toast.error('Failed to update profile. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error uploading photo:', error);
+      toast.error('An error occurred while uploading the photo');
+    } finally {
+      setUploadingPhoto(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const triggerFileInput = () => {
+    fileInputRef.current?.click();
   };
 
   const [books, setBooks] = useState<Book[]>([]);
@@ -268,21 +336,44 @@ export function UserProfile({ onViewUser, onPageChange }: UserProfileProps) {
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
+                  {/* Storage Migration Banner */}
+                  <StorageMigrationBanner />
+                  
+                  {/* Hidden file input */}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png,image/webp"
+                    onChange={handlePhotoUpload}
+                    className="hidden"
+                  />
+                  
                   <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-lg">
                     <div className="flex-shrink-0">
-                      <Avatar className="w-16 h-16 relative group">
-                        {user?.avatar && <AvatarImage src={user.avatar} alt={user?.name} />}
-                        <AvatarFallback>
-                          {user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
-                        </AvatarFallback>
-                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-full flex items-center justify-center cursor-pointer">
-                          <Camera className="w-6 h-6 text-white" />
-                        </div>
-                      </Avatar>
+                      <div className="relative">
+                        <Avatar className="w-16 h-16 cursor-pointer" onClick={triggerFileInput}>
+                          {(tempAvatarUrl || user?.avatar) && <AvatarImage src={tempAvatarUrl || user?.avatar} alt={user?.name} />}
+                          <AvatarFallback>
+                            {user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
+                          </AvatarFallback>
+                        </Avatar>
+                        <button
+                          type="button"
+                          onClick={triggerFileInput}
+                          disabled={uploadingPhoto}
+                          className="absolute -bottom-1 -right-1 w-7 h-7 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+                        >
+                          {uploadingPhoto ? (
+                            <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <Upload className="w-3 h-3" />
+                          )}
+                        </button>
+                      </div>
                     </div>
                     <div className="flex-1">
-                      <p className="text-sm">Click your photo to update</p>
-                      <p className="text-xs text-muted-foreground">JPG or PNG, max 5MB</p>
+                      <p className="text-sm">{uploadingPhoto ? 'Uploading...' : 'Click your photo to update'}</p>
+                      <p className="text-xs text-muted-foreground">JPG, PNG or WebP, max 5MB</p>
                     </div>
                   </div>
                   

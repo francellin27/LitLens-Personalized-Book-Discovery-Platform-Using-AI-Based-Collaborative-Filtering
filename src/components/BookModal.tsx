@@ -41,6 +41,7 @@ import { toast } from 'sonner@2.0.3';
 import { useAuth } from '../lib/auth-supabase';
 import { getUserBookStatus, setUserBookStatus, removeUserBookStatus, logReadingDates, createReview, fetchReviewsForBook } from '../lib/supabase-services';
 import { handleLogBookWithSupabase } from '../lib/bookModalHandlers';
+import { copyToClipboard } from "../utils/supabase/clipboard";
 
 interface BookModalProps {
   book: Book | null;
@@ -310,9 +311,13 @@ export function BookModal({ book, isOpen, onClose, onViewUser, onBookSelect }: B
     }
     
     try {
+      // When rating a book, it means it's completed, so remove 'reading' status
+      await removeUserBookStatus(user.id, book.id, 'reading');
+      
       const success = await setUserBookStatus(user.id, book.id, 'completed', rating);
       if (success) {
         setIsCompleted(true);
+        setIsReading(false);
         toast.success(`You rated "${book.title}" ${rating} stars!`);
       } else {
         toast.error('Failed to save rating');
@@ -419,7 +424,7 @@ export function BookModal({ book, isOpen, onClose, onViewUser, onBookSelect }: B
     }
   };
 
-  const handleShare = () => {
+  const handleShare = async () => {
     if (navigator.share) {
       navigator.share({
         title: book.title,
@@ -427,8 +432,12 @@ export function BookModal({ book, isOpen, onClose, onViewUser, onBookSelect }: B
         url: window.location.href
       });
     } else {
-      navigator.clipboard.writeText(window.location.href);
-      toast.success('Link copied to clipboard!');
+      const success = await copyToClipboard(window.location.href);
+      if (success) {
+        toast.success('Link copied to clipboard!');
+      } else {
+        toast.error('Failed to copy link');
+      }
     }
   };
 
@@ -529,12 +538,28 @@ export function BookModal({ book, isOpen, onClose, onViewUser, onBookSelect }: B
       // This is mock data, just show local feedback
       toast.success('Review submitted! (Mock data - not saved to database)');
       setUserComment('');
+      setReviewTitle('');
+      return;
+    }
+
+    // Check if user has already reviewed this book
+    const existingReview = reviews.find(review => review.userId === user.id);
+    if (existingReview) {
+      toast.error('You have already reviewed this book. You can only submit one review per book.');
       return;
     }
 
     setIsSubmittingReview(true);
 
     try {
+      console.log('Submitting review:', {
+        bookId: book.id,
+        userId: user.id,
+        rating: userRating,
+        title: reviewTitle.trim() || undefined,
+        content: userComment.trim()
+      });
+
       const newReview = await createReview({
         bookId: book.id,
         userId: user.id,
@@ -553,7 +578,7 @@ export function BookModal({ book, isOpen, onClose, onViewUser, onBookSelect }: B
         // Add the new review to the local state to show it immediately
         setReviews(prevReviews => [newReview, ...prevReviews]);
       } else {
-        toast.error('Failed to submit review. Please try again.');
+        toast.error('Failed to submit review. Please check the console for details.');
       }
     } catch (error) {
       console.error('Error submitting review:', error);
@@ -1019,6 +1044,9 @@ export function BookModal({ book, isOpen, onClose, onViewUser, onBookSelect }: B
                   
                   {/* Rating */}
                   <div>
+                    <label className="text-sm font-medium block mb-2">
+                      Your Rating *
+                    </label>
                     <div className="flex items-center gap-4 mb-3">
                       <StarRating 
                         rating={userRating} 
@@ -1033,16 +1061,16 @@ export function BookModal({ book, isOpen, onClose, onViewUser, onBookSelect }: B
                       )}
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {userRating > 0 ? 'Thanks for rating!' : 'Tap stars to rate this book'}
+                      {userRating > 0 ? 'Thanks for rating!' : 'Click on the stars to rate this book'}
                     </p>
                   </div>
 
                   {/* Comment Section */}
                   <div className="space-y-3">
                     <div>
-                      <label htmlFor="user-comment" className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+                      <h4 className="text-sm font-medium uppercase tracking-wide">
                         Write Your Review
-                      </label>
+                      </h4>
                       <p className="text-xs text-muted-foreground mt-1 mb-3">
                         Share your thoughts about this book with other readers
                       </p>
@@ -1077,29 +1105,41 @@ export function BookModal({ book, isOpen, onClose, onViewUser, onBookSelect }: B
                       />
                     </div>
                     
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground">
-                        {userComment.length}/500 characters
-                      </span>
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">
+                          {userComment.length}/500 characters
+                        </span>
+                        
+                        <Button
+                          onClick={handleSubmitReview}
+                          disabled={!userComment.trim() || userRating === 0 || isSubmittingReview}
+                          size="sm"
+                          className="min-touch-target"
+                        >
+                          {isSubmittingReview ? (
+                            <>
+                              <div className="w-4 h-4 mr-2 animate-spin rounded-full border-2 border-background border-t-transparent" />
+                              Submitting...
+                            </>
+                          ) : (
+                            <>
+                              <Send className="w-4 h-4 mr-2" />
+                              Submit Review
+                            </>
+                          )}
+                        </Button>
+                      </div>
                       
-                      <Button
-                        onClick={handleSubmitReview}
-                        disabled={!userComment.trim() || userRating === 0 || isSubmittingReview}
-                        size="sm"
-                        className="min-touch-target"
-                      >
-                        {isSubmittingReview ? (
-                          <>
-                            <div className="w-4 h-4 mr-2 animate-spin rounded-full border-2 border-background border-t-transparent" />
-                            Submitting...
-                          </>
-                        ) : (
-                          <>
-                            <Send className="w-4 h-4 mr-2" />
-                            Submit Review
-                          </>
-                        )}
-                      </Button>
+                      {(!userComment.trim() || userRating === 0) && (
+                        <p className="text-xs text-muted-foreground text-right">
+                          {userRating === 0 && !userComment.trim() 
+                            ? 'Please add a rating and write your review to submit'
+                            : userRating === 0 
+                            ? 'Please add a rating to submit your review'
+                            : 'Please write your review to submit'}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>

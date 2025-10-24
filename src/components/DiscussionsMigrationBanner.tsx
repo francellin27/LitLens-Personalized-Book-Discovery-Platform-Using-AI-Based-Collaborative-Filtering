@@ -1,6 +1,8 @@
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { Button } from "./ui/button";
 import { AlertTriangle, ExternalLink } from "lucide-react";
+import { copyToClipboard } from "../utils/supabase/clipboard";
+import { toast } from "sonner@2.0.3";
 
 export function DiscussionsMigrationBanner() {
   const migrationSQL = `-- Copy and paste this into Supabase SQL Editor
@@ -138,9 +140,13 @@ CREATE POLICY "Users can delete own replies or admins can delete any"
     )
   );`;
 
-  const handleCopySQL = () => {
-    navigator.clipboard.writeText(migrationSQL);
-    alert('Migration SQL copied to clipboard! Now paste it into Supabase SQL Editor.');
+  const handleCopySQL = async () => {
+    const success = await copyToClipboard(migrationSQL);
+    if (success) {
+      toast.success('Migration SQL copied to clipboard! Now paste it into Supabase SQL Editor.');
+    } else {
+      toast.error('Failed to copy SQL to clipboard');
+    }
   };
 
   const handleOpenSupabase = () => {

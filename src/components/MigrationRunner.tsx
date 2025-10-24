@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Alert, AlertDescription } from './ui/alert';
 import { CheckCircle2, AlertCircle, Copy, ExternalLink, Database } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
+import { copyToClipboard } from "../utils/supabase/clipboard";
 
 const MIGRATION_SQL = `-- Add reading date tracking to user_book_status table
 ALTER TABLE user_book_status
@@ -21,13 +22,13 @@ COMMENT ON COLUMN user_book_status.finish_date IS 'Date when user finished readi
 export function MigrationRunner() {
   const [copied, setCopied] = useState(false);
 
-  const copyToClipboard = async () => {
-    try {
-      await navigator.clipboard.writeText(MIGRATION_SQL);
+  const handleCopyToClipboard = async () => {
+    const success = await copyToClipboard(MIGRATION_SQL);
+    if (success) {
       setCopied(true);
       toast.success('SQL copied to clipboard!');
       setTimeout(() => setCopied(false), 3000);
-    } catch (error) {
+    } else {
       toast.error('Failed to copy to clipboard');
     }
   };
@@ -62,7 +63,7 @@ export function MigrationRunner() {
               {MIGRATION_SQL}
             </pre>
             <Button
-              onClick={copyToClipboard}
+              onClick={handleCopyToClipboard}
               variant="outline"
               size="sm"
               className="w-full border-orange-300 hover:bg-orange-100"

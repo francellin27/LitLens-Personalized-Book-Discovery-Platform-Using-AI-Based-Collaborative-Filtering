@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { toast } from 'sonner@2.0.3';
+import { copyToClipboard } from '../utils/clipboard';
 
 interface BookDetailsPageProps {
   book: Book;
@@ -133,7 +134,7 @@ export function BookDetailsPage({ book, onBack }: BookDetailsPageProps) {
     toast.success(isInReadingList ? 'Removed from reading list' : 'Added to reading list');
   };
 
-  const handleShare = () => {
+  const handleShare = async () => {
     if (navigator.share) {
       navigator.share({
         title: book.title,
@@ -141,8 +142,12 @@ export function BookDetailsPage({ book, onBack }: BookDetailsPageProps) {
         url: window.location.href
       });
     } else {
-      navigator.clipboard.writeText(window.location.href);
-      toast.success('Link copied to clipboard!');
+      const success = await copyToClipboard(window.location.href);
+      if (success) {
+        toast.success('Link copied to clipboard!');
+      } else {
+        toast.error('Failed to copy link');
+      }
     }
   };
 

@@ -17,6 +17,12 @@ export function Navigation({ currentPage, onPageChange, user }: NavigationProps)
   const { logout } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
 
+  // Define handleNavigation early so it can be used by both admin and user sections
+  const handleNavigation = (page: PageType) => {
+    onPageChange(page);
+    setIsOpen(false);
+  };
+
   // For admin users, only show admin panel
   if (user?.role === 'admin') {
     const adminNavItems = [
@@ -162,11 +168,6 @@ export function Navigation({ currentPage, onPageChange, user }: NavigationProps)
 
   // Combined for mobile menu
   const allNavItems = [...mainNavItems, ...userNavItems];
-
-  const handleNavigation = (page: PageType) => {
-    onPageChange(page);
-    setIsOpen(false);
-  };
 
   return (
     <nav className="border-b bg-card/95 backdrop-blur-sm sticky top-0 z-50 shadow-sm">

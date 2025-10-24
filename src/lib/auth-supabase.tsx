@@ -89,24 +89,35 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Initialize auth state
   useEffect(() => {
     // Check active session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        fetchUserProfile(session.user).then(setUser);
-      }
-      setIsLoading(false);
-    });
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        if (session?.user) {
+          fetchUserProfile(session.user).then(setUser);
+        }
+        setIsLoading(false);
+      })
+      .catch((error) => {
+        console.error('Error getting session:', error);
+        // Still set loading to false so the app doesn't hang
+        setIsLoading(false);
+      });
 
     // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        const profile = await fetchUserProfile(session.user);
-        setUser(profile);
-      } else {
-        setUser(null);
+      try {
+        if (session?.user) {
+          const profile = await fetchUserProfile(session.user);
+          setUser(profile);
+        } else {
+          setUser(null);
+        }
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Error in auth state change:', error);
+        setIsLoading(false);
       }
-      setIsLoading(false);
     });
 
     return () => subscription.unsubscribe();
@@ -145,6 +156,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (error) {
         console.error('Login error:', error);
         setIsLoading(false);
+        
+        // Check for connection errors
+        if (error.message?.includes('fetch') || error.name === 'AuthRetryableFetchError') {
+          throw new Error('Unable to connect to authentication service. Please check your internet connection or try again later.');
+        }
+        
         return false;
       }
 
@@ -157,9 +174,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       setIsLoading(false);
       return false;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login error:', error);
       setIsLoading(false);
+      
+      // Re-throw connection errors so they can be displayed to the user
+      if (error.message?.includes('connect') || error.message?.includes('fetch')) {
+        throw error;
+      }
+      
       return false;
     }
   };

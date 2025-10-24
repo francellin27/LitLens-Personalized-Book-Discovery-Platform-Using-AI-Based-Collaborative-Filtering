@@ -17,6 +17,7 @@ import {
   type Discussion,
   type DiscussionReply as SupabaseDiscussionReply
 } from "../lib/supabase-services";
+import { copyToClipboard } from "../utils/supabase/clipboard";
 import { 
   ArrowLeft,
   MessageSquare, 
@@ -104,10 +105,10 @@ export function DiscussionDetailsPage({
   };
 
   const handleShare = async () => {
-    try {
-      await navigator.clipboard.writeText(window.location.href);
+    const success = await copyToClipboard(window.location.href);
+    if (success) {
       toast.success("Discussion link copied to clipboard!");
-    } catch (error) {
+    } else {
       toast.error("Failed to copy link");
     }
   };

@@ -39,8 +39,10 @@ import { HelpPrivacyAccountSecurity } from "./components/HelpPrivacyAccountSecur
 import { HelpPrivacyDataSharing } from "./components/HelpPrivacyDataSharing";
 import { HelpPrivacyReporting } from "./components/HelpPrivacyReporting";
 import { MigrationAlert } from "./components/MigrationAlert";
+import { ConnectionStatus } from "./components/ConnectionStatus";
 import { Toaster } from "./components/ui/sonner";
 import { Book } from "./lib/bookData";
+import { supabase } from "./utils/supabase/client";
 
 function AppContent() {
   const { user } = useAuth();
@@ -90,8 +92,38 @@ function AppContent() {
 
   const handleViewUser = (userId: string) => {
     setSelectedBook(null); // Close book modal if open
-    setViewingUserId(userId);
-    window.scrollTo(0, 0);
+    
+    // Check if the user being viewed is the current logged-in admin
+    if (user?.id === userId && user?.role === 'admin') {
+      // Navigate to admin panel instead
+      setCurrentPage('admin');
+      setViewingUserId(null);
+      window.scrollTo(0, 0);
+      return;
+    }
+    
+    // Check if the user being viewed is an admin (by fetching their role)
+    supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .single()
+      .then(({ data, error }) => {
+        if (!error && data?.role === 'admin') {
+          // If viewing an admin profile, redirect to admin panel
+          setCurrentPage('admin');
+          setViewingUserId(null);
+        } else {
+          // Regular user profile
+          setViewingUserId(userId);
+        }
+        window.scrollTo(0, 0);
+      })
+      .catch(() => {
+        // If there's an error, default to showing the profile
+        setViewingUserId(userId);
+        window.scrollTo(0, 0);
+      });
   };
 
   const handleBackToMain = () => {
@@ -284,6 +316,9 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
+      {/* Connection Status - Shows if unable to connect to Supabase */}
+      <ConnectionStatus />
+      
       {/* Migration Alert - Shows if database needs migration */}
       <MigrationAlert />
       
