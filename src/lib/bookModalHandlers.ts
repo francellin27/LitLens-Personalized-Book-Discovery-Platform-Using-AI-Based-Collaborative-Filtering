@@ -1,5 +1,5 @@
 import { toast } from 'sonner@2.0.3';
-import { setUserBookStatus, logReadingDates } from './supabase-services';
+import { setUserBookStatus, logReadingDates, removeUserBookStatus } from './supabase-services';
 
 export async function handleLogBookWithSupabase(
   user: any,
@@ -36,6 +36,11 @@ export async function handleLogBookWithSupabase(
   try {
     // Determine the status based on whether finish date is provided
     const status = finishDate ? 'completed' : 'reading';
+    
+    // If marking as completed, first remove the 'reading' status to avoid duplicates
+    if (status === 'completed') {
+      await removeUserBookStatus(user.id, book.id, 'reading');
+    }
     
     // Update the book status in Supabase
     const success = await setUserBookStatus(user.id, book.id, status);

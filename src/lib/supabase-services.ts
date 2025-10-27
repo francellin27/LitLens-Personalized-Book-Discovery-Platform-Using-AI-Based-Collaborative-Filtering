@@ -269,14 +269,25 @@ export async function createReview(review: Omit<Review, 'id' | 'date' | 'helpful
         book_id: review.bookId,
         user_id: review.userId,
         rating: review.rating,
-        title: review.title,
+        title: review.title || null, // Handle undefined/empty title
         content: review.content,
       })
       .select()
       .single();
 
-    if (error || !data) {
+    if (error) {
       console.error('Error creating review:', error);
+      
+      // Check for unique constraint violation (user already reviewed this book)
+      if (error.code === '23505') {
+        console.error('User has already reviewed this book');
+      }
+      
+      return null;
+    }
+
+    if (!data) {
+      console.error('No data returned from review creation');
       return null;
     }
 
@@ -291,15 +302,15 @@ export async function createReview(review: Omit<Review, 'id' | 'date' | 'helpful
       id: data.id,
       bookId: data.book_id,
       userId: data.user_id,
-      userName: userData?.name || 'Unknown User',
+      userName: userData?.name || userData?.username || 'Unknown User',
       userAvatar: userData?.avatar,
       rating: data.rating,
       title: data.title,
       content: data.content,
       date: data.created_at,
-      helpful: data.helpful,
-      isReported: data.is_reported,
-      reportCount: data.report_count
+      helpful: data.helpful || 0,
+      isReported: data.is_reported || false,
+      reportCount: data.report_count || 0
     };
   } catch (error) {
     console.error('Error creating review:', error);
@@ -726,6 +737,7 @@ export async function updateUserProfile(
     name: string;
     username: string;
     bio: string;
+    avatar: string;
     favoriteGenres: string[];
   }>
 ): Promise<boolean> {
@@ -735,6 +747,7 @@ export async function updateUserProfile(
     if (updates.name !== undefined) dbUpdates.name = updates.name;
     if (updates.username !== undefined) dbUpdates.username = updates.username;
     if (updates.bio !== undefined) dbUpdates.bio = updates.bio;
+    if (updates.avatar !== undefined) dbUpdates.avatar = updates.avatar;
     if (updates.favoriteGenres !== undefined) dbUpdates.favorite_genres = updates.favoriteGenres;
 
     const { error } = await supabase
@@ -1434,4 +1447,162 @@ function transformDbBookToBook(dbBook: any): Book {
     publishingInfo: dbBook.publishing_info,
     length: dbBook.length,
   };
+}
+
+// ============ PROFILE PHOTO UPLOAD ============
+
+// Verify storage bucket exists (bucket should be created via SQL migration)
+async function initializeStorageBucket(): Promise<boolean> {
+  try {
+    const bucketName = 'litlens-profile-photos';
+    
+    // Check if bucket exists
+    const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+    
+    if (listError) {
+      console.error('Error listing buckets:', listError);
+      // Return true anyway - the upload will fail with a better error if bucket doesn't exist
+      return true;
+    }
+
+    const bucketExists = buckets?.some(bucket => bucket.name === bucketName);
+    
+    if (!bucketExists) {
+      console.warn('Storage bucket does not exist. Please run migration 007_profile_photos_storage.sql');
+      console.warn('Profile photo uploads will not work until the bucket is created.');
+      // Return true to allow the app to continue - upload will fail gracefully
+      return true;
+    }
+    
+    console.log('Storage bucket verified:', bucketName);
+    return true;
+  } catch (error) {
+    console.error('Error checking storage bucket:', error);
+    // Return true to allow the app to continue
+    return true;
+  }
+}
+
+export async function uploadProfilePhoto(
+  userId: string,
+  file: File
+): Promise<string | null> {
+  try {
+    // Check if user is authenticated first
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError || !session) {
+      console.error('User not authenticated. Please log in again.', sessionError);
+      return null;
+    }
+
+    console.log('Upload started - User authenticated:', session.user.id);
+
+    // Verify bucket exists (should be created via SQL migration)
+    await initializeStorageBucket();
+
+    // Validate file type
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      console.error('Invalid file type. Only JPG, PNG, and WebP are allowed.');
+      return null;
+    }
+
+    // Validate file size (5MB max)
+    const maxSize = 5 * 1024 * 1024; // 5MB in bytes
+    if (file.size > maxSize) {
+      console.error('File size exceeds 5MB limit.');
+      return null;
+    }
+
+    // Create unique filename with timestamp
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${userId}-${Date.now()}.${fileExt}`;
+    const filePath = `avatars/${fileName}`;
+
+    console.log('Uploading to:', filePath, 'Size:', file.size, 'Type:', file.type);
+
+    // Delete old avatar if exists
+    try {
+      const { data: existingFiles } = await supabase.storage
+        .from('litlens-profile-photos')
+        .list('avatars', {
+          search: userId
+        });
+      
+      if (existingFiles && existingFiles.length > 0) {
+        console.log('Deleting old avatars:', existingFiles.length);
+        for (const file of existingFiles) {
+          await supabase.storage
+            .from('litlens-profile-photos')
+            .remove([`avatars/${file.name}`]);
+        }
+      }
+    } catch (e) {
+      console.log('Note: Could not delete old avatars (this is OK):', e);
+    }
+
+    // Upload to Supabase Storage (LitLens bucket)
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('litlens-profile-photos')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: true // Allow overwriting
+      });
+
+    if (uploadError) {
+      console.error('Error uploading file to LitLens storage:', uploadError);
+      console.error('Upload error details:', {
+        message: uploadError.message,
+        statusCode: uploadError.statusCode,
+        error: uploadError.error
+      });
+      return null;
+    }
+
+    console.log('Upload successful:', uploadData);
+
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from('litlens-profile-photos')
+      .getPublicUrl(filePath);
+
+    if (!urlData?.publicUrl) {
+      console.error('Error getting public URL');
+      return null;
+    }
+
+    console.log('Public URL generated:', urlData.publicUrl);
+    
+    // Verify the URL is accessible by checking the bucket settings
+    const { data: bucketData } = await supabase.storage.getBucket('litlens-profile-photos');
+    console.log('Bucket settings:', bucketData);
+    
+    return urlData.publicUrl;
+  } catch (error) {
+    console.error('Error uploading profile photo:', error);
+    return null;
+  }
+}
+
+export async function deleteProfilePhoto(photoUrl: string): Promise<boolean> {
+  try {
+    // Extract file path from URL
+    const urlParts = photoUrl.split('/');
+    const filePath = `avatars/${urlParts[urlParts.length - 1]}`;
+
+    const { error } = await supabase.storage
+      .from('litlens-profile-photos')
+      .remove([filePath]);
+
+    if (error) {
+      console.error('Error deleting profile photo from LitLens storage:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error deleting profile photo:', error);
+    return false;
+  }
 }

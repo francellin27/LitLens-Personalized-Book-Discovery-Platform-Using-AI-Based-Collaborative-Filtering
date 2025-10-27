@@ -28,7 +28,7 @@ export interface Review {
   userName: string;
   userAvatar?: string;
   rating: number;
-  title: string;
+  title?: string;
   content: string;
   date: string;
   helpful: number;

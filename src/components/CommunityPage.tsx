@@ -118,8 +118,9 @@ export function CommunityPage({ onBookSelect, onViewUser, onViewDiscussion }: Co
   const loadLeaderboardData = async () => {
     setIsLoadingLeaderboard(true);
     try {
+      // Fetch only regular users (exclude admins from leaderboard)
       const [allUsers, allReviews] = await Promise.all([
-        fetchAllUsers(),
+        fetchAllUsers('user'), // Only fetch users with 'user' role
         fetchAllReviews()
       ]);
       
@@ -130,16 +131,18 @@ export function CommunityPage({ onBookSelect, onViewUser, onViewDiscussion }: Co
       }, {} as Record<string, number>);
 
       // Transform users to leaderboard format and calculate points
-      const leaderboardUsers = allUsers.map(user => ({
-        id: user.id,
-        name: user.name,
-        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`,
-        booksRead: user.booksRead,
-        reviewsWritten: reviewCountByUser[user.id] || 0,
-        points: (user.booksRead * 10) + (reviewCountByUser[user.id] || 0) * 25, // 10 points per book, 25 per review
-        rank: 0,
-        badge: undefined as string | undefined
-      }));
+      const leaderboardUsers = allUsers
+        .filter(user => user.role !== 'admin') // Extra safety: filter out any admin users
+        .map(user => ({
+          id: user.id,
+          name: user.name,
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`,
+          booksRead: user.booksRead,
+          reviewsWritten: reviewCountByUser[user.id] || 0,
+          points: (user.booksRead * 10) + (reviewCountByUser[user.id] || 0) * 25, // 10 points per book, 25 per review
+          rank: 0,
+          badge: undefined as string | undefined
+        }));
 
       // Sort by points and assign ranks
       leaderboardUsers.sort((a, b) => b.points - a.points);

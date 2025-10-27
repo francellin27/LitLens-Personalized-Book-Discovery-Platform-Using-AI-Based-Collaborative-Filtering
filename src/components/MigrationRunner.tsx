@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Alert, AlertDescription } from './ui/alert';
 import { CheckCircle2, AlertCircle, Copy, ExternalLink, Database } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
-import { copyToClipboard } from "../utils/supabase/clipboard";
+import { copyToClipboard } from '../utils/clipboard';
 
 const MIGRATION_SQL = `-- Add reading date tracking to user_book_status table
 ALTER TABLE user_book_status

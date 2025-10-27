@@ -88,39 +88,77 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // Initialize auth state
   useEffect(() => {
+    let mounted = true;
+    
     // Check active session
-    supabase.auth.getSession()
-      .then(({ data: { session } }) => {
-        if (session?.user) {
-          fetchUserProfile(session.user).then(setUser);
+    const initializeAuth = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('Error getting session:', error);
+          if (mounted) setIsLoading(false);
+          return;
         }
-        setIsLoading(false);
-      })
-      .catch((error) => {
-        console.error('Error getting session:', error);
-        // Still set loading to false so the app doesn't hang
-        setIsLoading(false);
-      });
+        
+        if (session?.user && mounted) {
+          const profile = await fetchUserProfile(session.user);
+          if (mounted) {
+            setUser(profile);
+            setIsLoading(false);
+          }
+        } else if (mounted) {
+          setUser(null);
+          setIsLoading(false);
+        }
+      } catch (error) {
+        console.error('Error initializing auth:', error);
+        if (mounted) {
+          setUser(null);
+          setIsLoading(false);
+        }
+      }
+    };
+
+    initializeAuth();
 
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event, session ? `User: ${session.user.email}` : 'No session');
+      
       try {
+        if (!mounted) return;
+        
         if (session?.user) {
+          console.log('Loading user profile for:', session.user.email);
           const profile = await fetchUserProfile(session.user);
-          setUser(profile);
+          if (mounted) {
+            console.log('Setting user profile:', profile?.email, 'Role:', profile?.role);
+            setUser(profile);
+            setIsLoading(false);
+          }
         } else {
-          setUser(null);
+          console.log('Clearing user session');
+          if (mounted) {
+            setUser(null);
+            setIsLoading(false);
+          }
         }
-        setIsLoading(false);
       } catch (error) {
         console.error('Error in auth state change:', error);
-        setIsLoading(false);
+        if (mounted) {
+          setUser(null);
+          setIsLoading(false);
+        }
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   // Check if username is available
@@ -148,10 +186,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       setIsLoading(true);
+      
+      // Set a timeout to prevent infinite loading
+      const timeoutId = setTimeout(() => {
+        console.warn('Login timeout - resetting loading state');
+        setIsLoading(false);
+      }, 15000); // 15 second timeout
+      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
+
+      clearTimeout(timeoutId);
 
       if (error) {
         console.error('Login error:', error);
@@ -166,9 +213,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
 
       if (data.user) {
-        const profile = await fetchUserProfile(data.user);
-        setUser(profile);
-        setIsLoading(false);
+        // Don't manually set user here - let the onAuthStateChange listener handle it
+        // This prevents race conditions and duplicate state updates
         return true;
       }
 
@@ -197,9 +243,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       setIsLoading(true);
 
+      // Set a timeout to prevent infinite loading
+      const timeoutId = setTimeout(() => {
+        console.warn('Signup timeout - resetting loading state');
+        setIsLoading(false);
+      }, 15000); // 15 second timeout
+
       // Check username availability first
       const isAvailable = await checkUsernameAvailability(username);
       if (!isAvailable) {
+        clearTimeout(timeoutId);
         setIsLoading(false);
         return false;
       }
@@ -216,6 +269,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         },
       });
 
+      clearTimeout(timeoutId);
+
       if (error) {
         console.error('Signup error:', error);
         setIsLoading(false);
@@ -224,13 +279,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
 
       if (data.user) {
-        // Profile is automatically created by database trigger
-        // Wait a moment for trigger to complete
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        const profile = await fetchUserProfile(data.user);
-        setUser(profile);
-        setIsLoading(false);
+        // Don't manually set user here - let the onAuthStateChange listener handle it
+        // This prevents race conditions and duplicate state updates
         return true;
       }
 
@@ -246,10 +296,39 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Logout function
   const logout = async () => {
     try {
-      await supabase.auth.signOut();
+      setIsLoading(true);
+      
+      // Set a timeout to prevent infinite loading
+      const timeoutId = setTimeout(() => {
+        console.warn('Logout timeout - resetting state anyway');
+        setUser(null);
+        setIsLoading(false);
+      }, 5000); // 5 second timeout for logout
+      
+      // Sign out from Supabase - this clears all auth tokens and sessions
+      const { error } = await supabase.auth.signOut({ scope: 'global' });
+      
+      clearTimeout(timeoutId);
+      
+      if (error) {
+        console.error('Logout error:', error);
+        // Even if there's an error, clear the local state
+      }
+      
+      // Clear user state immediately
+      // The onAuthStateChange listener will also handle this, but we do it here for immediate feedback
       setUser(null);
+      setIsLoading(false);
+      
+      // Force a small delay to ensure all cleanup is complete
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      console.log('Logout complete - session cleared');
     } catch (error) {
       console.error('Logout error:', error);
+      // Always ensure we clear state even if logout fails
+      setUser(null);
+      setIsLoading(false);
     }
   };
 
@@ -271,18 +350,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
         dbUpdates.reading_goal = updates.preferences.readingGoal;
       }
 
+      console.log('Updating profile in database with:', dbUpdates);
+      
       const { error } = await supabase
         .from('profiles')
         .update(dbUpdates)
         .eq('id', user.id);
 
       if (error) {
-        console.error('Error updating profile:', error);
+        console.error('Error updating profile in database:', error);
         return false;
       }
 
+      console.log('Database update successful, updating local user state');
+      console.log('Current user:', user);
+      console.log('Updates to apply:', updates);
+      
       // Update local user state
-      setUser({ ...user, ...updates });
+      const updatedUser = { ...user, ...updates };
+      console.log('New user object:', updatedUser);
+      setUser(updatedUser);
+      
       return true;
     } catch (error) {
       console.error('Error updating profile:', error);

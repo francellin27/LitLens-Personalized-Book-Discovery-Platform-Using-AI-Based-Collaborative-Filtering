@@ -31,9 +31,8 @@ export function Login() {
       const success = await login(loginEmail, loginPassword);
       if (!success) {
         toast.error('Invalid email or password');
-      } else {
-        toast.success('Welcome back!');
       }
+      // Don't show success toast here - let the app redirect naturally
     } catch (error: any) {
       // Handle connection errors
       toast.error(error.message || 'Unable to connect. Please check your internet connection.');
@@ -53,9 +52,11 @@ export function Login() {
     }
 
     try {
-      await signup(signupEmail, signupPassword, signupName, signupUsername);
-      toast.success('Account created successfully!');
-      setShowSetupAlert(false);
+      const success = await signup(signupEmail, signupPassword, signupName, signupUsername);
+      if (success) {
+        setShowSetupAlert(false);
+        // Don't show success toast here - let the app redirect naturally
+      }
     } catch (error: any) {
       // Display specific error messages from Supabase
       const errorMessage = error?.message || 'Signup failed';

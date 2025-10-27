@@ -14,14 +14,13 @@ import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { StarRating } from './StarRating';
 import { ImageWithFallback } from './figma/ImageWithFallback';
-import { BookOpen, Heart, List, Settings, Star, Calendar, Edit, Save, X, Camera, Clock, LogOut, Trash2, Eye, Database, HelpCircle, Trophy, Target, TrendingUp, Award, Upload } from 'lucide-react';
+import { BookOpen, Heart, List, Settings, Star, Calendar, Edit, Save, X, Clock, LogOut, Trash2, Eye, Trophy, Target, TrendingUp, Award, Upload, Sparkles, HelpCircle } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { Switch } from './ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { supabase } from '../utils/supabase/client';
 import { Progress } from './ui/progress';
-import { updateUserProfile } from '../lib/supabase-services';
-import { StorageMigrationBanner } from './StorageMigrationBanner';
+import { uploadProfilePhoto, updateUserProfile } from '../lib/supabase-services';
 
 interface UserProfileProps {
   onViewUser?: (userId: string) => void;
@@ -29,7 +28,7 @@ interface UserProfileProps {
 }
 
 export function UserProfile({ onViewUser, onPageChange }: UserProfileProps) {
-  const { user, logout } = useAuth();
+  const { user, logout, updateProfile } = useAuth();
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(user?.name || '');
@@ -52,6 +51,33 @@ export function UserProfile({ onViewUser, onPageChange }: UserProfileProps) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [tempAvatarUrl, setTempAvatarUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync tempAvatarUrl with user.avatar when it changes
+  useEffect(() => {
+    if (user?.avatar && !tempAvatarUrl) {
+      console.log('Syncing avatar URL from user object:', user.avatar);
+      setTempAvatarUrl(user.avatar);
+    }
+  }, [user?.avatar]);
+
+  // Log current avatar state for debugging
+  useEffect(() => {
+    console.log('🖼️ Avatar State:', {
+      userAvatar: user?.avatar,
+      tempAvatar: tempAvatarUrl,
+      displayedUrl: tempAvatarUrl || user?.avatar
+    });
+  }, [user?.avatar, tempAvatarUrl]);
+
+  // Sync edit fields when user data changes
+  useEffect(() => {
+    if (user) {
+      setEditName(user.name || '');
+      setEditUsername(user.username || '');
+      setEditBio(user.bio || '');
+      setReadingGoal(user.preferences?.readingGoal || 50);
+    }
+  }, [user]);
 
   // Mock last profile update date - in a real app, this would come from the backend
   const lastProfileUpdate = new Date('2024-12-01'); // Example date
@@ -139,10 +165,27 @@ export function UserProfile({ onViewUser, onPageChange }: UserProfileProps) {
     setRefreshKey(prev => prev + 1);
   };
 
-  const handleSaveProfile = () => {
-    // In a real app, this would update the user profile via API
-    toast.success('Profile updated successfully!');
-    setIsEditing(false);
+  const handleSaveProfile = async () => {
+    if (!user) return;
+
+    try {
+      // Update profile in database and auth context
+      const success = await updateProfile({
+        name: editName,
+        username: editUsername,
+        bio: editBio,
+      });
+
+      if (success) {
+        toast.success('Profile updated successfully! Your changes are now visible everywhere.');
+        setIsEditing(false);
+      } else {
+        toast.error('Failed to update profile. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      toast.error('An error occurred while updating your profile.');
+    }
   };
 
   const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -174,15 +217,19 @@ export function UserProfile({ onViewUser, onPageChange }: UserProfileProps) {
         return;
       }
 
-      // Update user profile with new avatar URL
-      const success = await updateUserProfile(user.id, { avatar: photoUrl });
-
-      if (success) {
+      console.log('Photo uploaded, URL:', photoUrl);
+      
+      // Update auth context to immediately show the new avatar
+      const authUpdateSuccess = await updateProfile({ avatar: photoUrl });
+      
+      console.log('Auth context update success:', authUpdateSuccess);
+      
+      if (authUpdateSuccess) {
         // Update local state
         setTempAvatarUrl(photoUrl);
         
-        // Refresh the auth context to update the user object
-        setRefreshKey(prev => prev + 1);
+        console.log('User avatar should now be:', photoUrl);
+        console.log('Current user object:', user);
         
         toast.success('Profile photo updated successfully!');
       } else {
@@ -281,8 +328,17 @@ export function UserProfile({ onViewUser, onPageChange }: UserProfileProps) {
             {/* Avatar Section */}
             <div className="relative group">
               <div className="absolute -inset-1 bg-gradient-to-r from-white/40 to-white/20 rounded-full blur opacity-75 group-hover:opacity-100 transition duration-200" />
-              <Avatar className="relative w-28 h-28 md:w-32 md:h-32 border-4 border-white/30 shadow-2xl">
-                {user?.avatar && <AvatarImage src={user.avatar} alt={user?.name} />}
+              <Avatar className="relative w-28 h-28 md:w-32 md:h-32 border-4 border-white/30 shadow-2xl" key={tempAvatarUrl || user?.avatar || 'no-avatar'}>
+                <AvatarImage 
+                  src={tempAvatarUrl || user?.avatar} 
+                  alt={user?.name}
+                  onLoad={() => console.log('✅ Avatar loaded successfully!')}
+                  onError={(e) => {
+                    console.error('❌ Avatar failed to load');
+                    console.error('URL:', tempAvatarUrl || user?.avatar);
+                    console.error('Error:', e);
+                  }}
+                />
                 <AvatarFallback className="text-3xl bg-white/20 text-white backdrop-blur-sm">
                   {user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
                 </AvatarFallback>
@@ -336,9 +392,6 @@ export function UserProfile({ onViewUser, onPageChange }: UserProfileProps) {
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
-                  {/* Storage Migration Banner */}
-                  <StorageMigrationBanner />
-                  
                   {/* Hidden file input */}
                   <input
                     ref={fileInputRef}
@@ -800,7 +853,7 @@ export function UserProfile({ onViewUser, onPageChange }: UserProfileProps) {
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <Database className="w-5 h-5" />
+                      <Sparkles className="w-5 h-5" />
                       Personalization
                     </CardTitle>
                   </CardHeader>

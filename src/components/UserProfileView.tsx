@@ -48,13 +48,20 @@ export function UserProfileView({ userId, onBack }: UserProfileViewProps) {
       // Fetch user profile
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('id, name, username, email, bio, avatar, favorite_genres, created_at')
+        .select('id, name, username, email, bio, avatar, favorite_genres, created_at, role')
         .eq('id', userId)
         .single();
 
       if (profileError) {
         console.error('Error fetching user profile:', profileError);
         toast.error('Failed to load user profile');
+        return;
+      }
+
+      // Block access to admin profiles for regular users
+      if (profile && profile.role === 'admin') {
+        toast.error('This profile is not accessible');
+        onBack();
         return;
       }
 

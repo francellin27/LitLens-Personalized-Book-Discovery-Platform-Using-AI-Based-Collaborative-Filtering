@@ -10,17 +10,31 @@ export type PageType = 'home' | 'search' | 'profile' | 'admin' | 'browse' | 'rec
 interface NavigationProps {
   currentPage: PageType;
   onPageChange: (page: PageType) => void;
-  user: { id: string; name: string; username: string; email: string; role: 'user' | 'admin'; preferences?: any } | null;
+  user: { id: string; name: string; username: string; email: string; role: 'user' | 'admin'; avatar?: string; preferences?: any } | null;
 }
 
 export function Navigation({ currentPage, onPageChange, user }: NavigationProps) {
-  const { logout } = useAuth();
+  const { logout, isLoading } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   // Define handleNavigation early so it can be used by both admin and user sections
   const handleNavigation = (page: PageType) => {
     onPageChange(page);
     setIsOpen(false);
+  };
+
+  // Handle logout with loading state
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    setIsOpen(false);
+    try {
+      await logout();
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      // Don't reset isLoggingOut here - let the component unmount
+    }
   };
 
   // For admin users, only show admin panel
@@ -59,19 +73,35 @@ export function Navigation({ currentPage, onPageChange, user }: NavigationProps)
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={logout}
+                onClick={handleLogout}
+                disabled={isLoggingOut}
                 className="flex items-center gap-2 text-destructive hover:text-destructive hover:bg-destructive/10 focus-visible-ring"
                 aria-label="Sign out of your admin account"
               >
-                <LogOut className="w-4 h-4" aria-hidden="true" />
-                <span>Logout</span>
+                {isLoggingOut ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-destructive border-t-transparent rounded-full animate-spin" aria-hidden="true" />
+                    <span>Logging out...</span>
+                  </>
+                ) : (
+                  <>
+                    <LogOut className="w-4 h-4" aria-hidden="true" />
+                    <span>Logout</span>
+                  </>
+                )}
               </Button>
               
-              {/* Welcome Message */}
+              {/* Welcome Message with Avatar */}
               <div className="flex items-center gap-3 ml-4">
-                <span className="text-sm text-muted-foreground hidden xl:block whitespace-nowrap">
-                  Welcome, {user?.name}
+                <span className="text-sm text-muted-foreground hidden md:block whitespace-nowrap">
+                  Hello, {user?.name}
                 </span>
+                <Avatar className="w-8 h-8">
+                  <AvatarImage src={user?.avatar} alt={user?.name} />
+                  <AvatarFallback>
+                    {user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
+                  </AvatarFallback>
+                </Avatar>
               </div>
             </div>
 
@@ -94,54 +124,73 @@ export function Navigation({ currentPage, onPageChange, user }: NavigationProps)
                   
                   <div className="flex flex-col h-full">
                     {/* Admin User Section */}
-                    <div className="px-6 py-4 bg-gradient-to-r from-primary/5 to-primary/10">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="w-12 h-12">
+                    <div className="px-6 py-5 bg-gradient-to-r from-primary/5 to-primary/10 border-b">
+                      <div className="flex items-center gap-4">
+                        <Avatar className="w-16 h-16 ring-2 ring-primary/20">
                           <AvatarImage 
-                            src="https://images.unsplash.com/photo-1576558656222-ba66febe3dec?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBoZWFkc2hvdCUyMHBvcnRyYWl0fGVufDF8fHx8MTc1ODU1MDMwMHww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral" 
+                            src={user?.avatar} 
                             alt={user?.name} 
                           />
-                          <AvatarFallback>
+                          <AvatarFallback className="text-lg">
                             {user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
                           </AvatarFallback>
                         </Avatar>
-                        <div className="flex-1">
-                          <p className="font-medium text-base">{user?.name}</p>
-                          <p className="text-sm text-muted-foreground">@{user?.username}</p>
-                          <p className="text-xs text-primary font-medium">Administrator</p>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-base truncate">{user?.name}</p>
+                          <p className="text-sm text-muted-foreground truncate">@{user?.username}</p>
+                          <div className="inline-flex items-center gap-1.5 mt-1.5 px-2 py-0.5 bg-primary/10 text-primary rounded-full">
+                            <span className="text-xs font-medium">Administrator</span>
+                          </div>
                         </div>
                       </div>
                     </div>
 
                     {/* Navigation Items */}
-                    <div className="flex-1 px-4 py-6">
-                      <div className="space-y-3">
+                    <div className="flex-1 py-6 overflow-y-auto">
+                      <div className="px-4 space-y-1">
+                        {/* Administration Section */}
+                        <div className="px-3 py-2">
+                          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            Administration
+                          </h3>
+                        </div>
+                        
                         <Button
                           variant={currentPage === 'admin' ? "default" : "ghost"}
                           onClick={() => handleNavigation('admin')}
-                          className="w-full justify-start gap-4 h-12 px-4 font-medium focus-visible-ring"
+                          className="w-full justify-start gap-3 h-11 px-3 font-medium focus-visible-ring"
                           aria-label="Access admin panel"
                         >
-                          <div className="w-5 h-5 flex items-center justify-center">
-                            <Settings className="w-5 h-5" aria-hidden="true" />
-                          </div>
-                          <span className="text-base">Admin Panel</span>
+                          <Settings className="w-5 h-5" aria-hidden="true" />
+                          <span>Admin Panel</span>
                         </Button>
                         
-                        {/* Logout Button for Admin in Mobile Menu */}
+                        {/* Account Section */}
+                        <div className="px-3 py-2 pt-6">
+                          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            Account
+                          </h3>
+                        </div>
+                        
+                        {/* Logout Button */}
                         <Button
                           variant="ghost"
-                          onClick={() => {
-                            logout();
-                            setIsOpen(false);
-                          }}
-                          className="w-full justify-start gap-4 h-12 px-4 font-medium text-destructive hover:text-destructive hover:bg-destructive/10 mt-2 focus-visible-ring"
+                          onClick={handleLogout}
+                          disabled={isLoggingOut}
+                          className="w-full justify-start gap-3 h-11 px-3 font-medium text-destructive hover:text-destructive hover:bg-destructive/10 focus-visible-ring"
                           aria-label="Sign out of your admin account"
                         >
-                          <div className="w-5 h-5 flex items-center justify-center">
-                            <LogOut className="w-5 h-5" aria-hidden="true" />
-                          </div>
-                          <span className="text-base">Logout</span>
+                          {isLoggingOut ? (
+                            <>
+                              <div className="w-5 h-5 border-2 border-destructive border-t-transparent rounded-full animate-spin" aria-hidden="true" />
+                              <span>Logging out...</span>
+                            </>
+                          ) : (
+                            <>
+                              <LogOut className="w-5 h-5" aria-hidden="true" />
+                              <span>Logout</span>
+                            </>
+                          )}
                         </Button>
                       </div>
                     </div>
@@ -245,11 +294,17 @@ export function Navigation({ currentPage, onPageChange, user }: NavigationProps)
               </Button>
             )}
             
-            {/* Welcome Message */}
+            {/* Welcome Message with Avatar */}
             <div className="flex items-center gap-3 ml-4">
-              <span className="text-sm text-muted-foreground hidden xl:block whitespace-nowrap">
-                Welcome, {user?.name}
+              <span className="text-sm text-muted-foreground hidden md:block whitespace-nowrap">
+                Hello, {user?.name}
               </span>
+              <Avatar className="w-8 h-8">
+                <AvatarImage src={user?.avatar} alt={user?.name} />
+                <AvatarFallback>
+                  {user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
+                </AvatarFallback>
+              </Avatar>
             </div>
           </div>
 
@@ -275,113 +330,112 @@ export function Navigation({ currentPage, onPageChange, user }: NavigationProps)
                   {user?.role !== 'admin' ? (
                     <button
                       onClick={() => handleNavigation('profile')}
-                      className="w-full px-6 py-4 bg-gradient-to-r from-primary/5 to-primary/10 hover:from-primary/10 hover:to-primary/15 transition-colors text-left focus-visible-ring"
+                      className="w-full px-6 py-5 bg-gradient-to-r from-primary/5 to-primary/10 hover:from-primary/10 hover:to-primary/15 transition-all duration-200 text-left focus-visible-ring border-b"
                       aria-label="View your profile and account settings"
                     >
-                      <div className="flex items-center gap-3">
-                        <Avatar className="w-12 h-12">
+                      <div className="flex items-center gap-4">
+                        <Avatar className="w-16 h-16 ring-2 ring-primary/20">
                           <AvatarImage 
-                            src="https://images.unsplash.com/photo-1576558656222-ba66febe3dec?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBoZWFkc2hvdCUyMHBvcnRyYWl0fGVufDF8fHx8MTc1ODU1MDMwMHww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral" 
+                            src={user?.avatar} 
                             alt={user?.name} 
                           />
-                          <AvatarFallback>
+                          <AvatarFallback className="text-lg">
                             {user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
                           </AvatarFallback>
                         </Avatar>
-                        <div className="flex-1">
-                          <p className="font-medium text-base">{user?.name}</p>
-                          <p className="text-sm text-muted-foreground">@{user?.username}</p>
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          View Profile
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-base truncate">{user?.name}</p>
+                          <p className="text-sm text-muted-foreground truncate">@{user?.username}</p>
+                          <p className="text-xs text-primary font-medium mt-1">View Profile →</p>
                         </div>
                       </div>
                     </button>
                   ) : (
-                    <div className="px-6 py-4 bg-gradient-to-r from-primary/5 to-primary/10">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="w-12 h-12">
+                    <div className="px-6 py-5 bg-gradient-to-r from-primary/5 to-primary/10 border-b">
+                      <div className="flex items-center gap-4">
+                        <Avatar className="w-16 h-16 ring-2 ring-primary/20">
                           <AvatarImage 
-                            src="https://images.unsplash.com/photo-1576558656222-ba66febe3dec?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBoZWFkc2hvdCUyMHBvcnRyYWl0fGVufDF8fHx8MTc1ODU1MDMwMHww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral" 
+                            src={user?.avatar} 
                             alt={user?.name} 
                           />
-                          <AvatarFallback>
+                          <AvatarFallback className="text-lg">
                             {user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
                           </AvatarFallback>
                         </Avatar>
-                        <div className="flex-1">
-                          <p className="font-medium text-base">{user?.name}</p>
-                          <p className="text-sm text-muted-foreground">@{user?.username}</p>
-                          <p className="text-xs text-primary font-medium">Administrator</p>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-base truncate">{user?.name}</p>
+                          <p className="text-sm text-muted-foreground truncate">@{user?.username}</p>
+                          <div className="inline-flex items-center gap-1.5 mt-1.5 px-2 py-0.5 bg-primary/10 text-primary rounded-full">
+                            <span className="text-xs font-medium">Administrator</span>
+                          </div>
                         </div>
                       </div>
                     </div>
                   )}
 
                   {/* Navigation Items */}
-                  <div className="flex-1 px-4 py-6">
-                    <div className="space-y-3">
-                      <div className="px-2">
+                  <div className="flex-1 py-6 overflow-y-auto">
+                    <div className="px-4 space-y-1">
+                      {/* Main Navigation Section */}
+                      <div className="px-3 py-2">
                         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                           Navigation
                         </h3>
                       </div>
+                      
                       {mainNavItems.map((item) => (
                         <Button
                           key={item.id}
                           variant={currentPage === item.id ? "default" : "ghost"}
                           onClick={() => handleNavigation(item.id)}
-                          className="w-full justify-start gap-4 h-12 px-4 font-medium focus-visible-ring"
+                          className="w-full justify-start gap-3 h-11 px-3 font-medium focus-visible-ring"
                           aria-label={`Navigate to ${item.label.toLowerCase()} page`}
                         >
-                          <div className="w-5 h-5 flex items-center justify-center">
-                            <item.icon className="w-5 h-5" aria-hidden="true" />
-                          </div>
-                          <span className="text-base">{item.label}</span>
+                          <item.icon className="w-5 h-5" aria-hidden="true" />
+                          <span>{item.label}</span>
                         </Button>
                       ))}
                       
-                      {userNavItems.length > 0 && (
-                        <>
-                          <div className="px-2 pt-4">
-                            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                              Administration
-                            </h3>
-                          </div>
-                          {userNavItems.map((item) => (
-                            <Button
-                              key={item.id}
-                              variant={currentPage === item.id ? "default" : "ghost"}
-                              onClick={() => handleNavigation(item.id)}
-                              className="w-full justify-start gap-4 h-12 px-4 font-medium focus-visible-ring"
-                              aria-label={`Access ${item.label.toLowerCase()} panel`}
-                            >
-                              <div className="w-5 h-5 flex items-center justify-center">
-                                <item.icon className="w-5 h-5" aria-hidden="true" />
-                              </div>
-                              <span className="text-base">{item.label}</span>
-                            </Button>
-                          ))}
-                          
-                          {/* Logout Button for Admin in Mobile Menu */}
-                          {user?.role === 'admin' && (
-                            <Button
-                              variant="ghost"
-                              onClick={() => {
-                                logout();
-                                setIsOpen(false);
-                              }}
-                              className="w-full justify-start gap-4 h-12 px-4 font-medium text-destructive hover:text-destructive hover:bg-destructive/10 mt-2 focus-visible-ring"
-                              aria-label="Sign out of your admin account"
-                            >
-                              <div className="w-5 h-5 flex items-center justify-center">
-                                <LogOut className="w-5 h-5" aria-hidden="true" />
-                              </div>
-                              <span className="text-base">Logout</span>
-                            </Button>
-                          )}
-                        </>
+                      {/* Account Section */}
+                      <div className="px-3 py-2 pt-6">
+                        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                          Account
+                        </h3>
+                      </div>
+                      
+                      {/* Profile Button (Only for non-admin users) */}
+                      {user?.role !== 'admin' && (
+                        <Button
+                          variant={currentPage === 'profile' ? "default" : "ghost"}
+                          onClick={() => handleNavigation('profile')}
+                          className="w-full justify-start gap-3 h-11 px-3 font-medium focus-visible-ring"
+                          aria-label="View your profile and account settings"
+                        >
+                          <User className="w-5 h-5" aria-hidden="true" />
+                          <span>My Profile</span>
+                        </Button>
                       )}
+                      
+                      {/* Logout Button */}
+                      <Button
+                        variant="ghost"
+                        onClick={handleLogout}
+                        disabled={isLoggingOut}
+                        className="w-full justify-start gap-3 h-11 px-3 font-medium text-destructive hover:text-destructive hover:bg-destructive/10 focus-visible-ring"
+                        aria-label="Sign out of your account"
+                      >
+                        {isLoggingOut ? (
+                          <>
+                            <div className="w-5 h-5 border-2 border-destructive border-t-transparent rounded-full animate-spin" aria-hidden="true" />
+                            <span>Logging out...</span>
+                          </>
+                        ) : (
+                          <>
+                            <LogOut className="w-5 h-5" aria-hidden="true" />
+                            <span>Logout</span>
+                          </>
+                        )}
+                      </Button>
                     </div>
                   </div>
                 </div>
