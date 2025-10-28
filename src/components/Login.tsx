@@ -18,6 +18,7 @@ export function Login() {
   const [signupUsername, setSignupUsername] = useState('');
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
   const [showSetupAlert, setShowSetupAlert] = useState(false);
+  const [showLoginHelp, setShowLoginHelp] = useState(false);
   const { login, signup, isLoading, checkUsernameAvailability } = useAuth();
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -30,12 +31,27 @@ export function Login() {
     try {
       const success = await login(loginEmail, loginPassword);
       if (!success) {
-        toast.error('Invalid email or password');
+        // Login failed - could be wrong password or no account
+        toast.error('Invalid email or password. Please check your credentials and try again.');
+        // Show helpful setup instructions
+        setShowLoginHelp(true);
       }
-      // Don't show success toast here - let the app redirect naturally
+      // If success, don't show toast - let the app redirect naturally
     } catch (error: any) {
-      // Handle connection errors
-      toast.error(error.message || 'Unable to connect. Please check your internet connection.');
+      // Handle specific thrown errors (connection issues, etc)
+      const errorMessage = error?.message || '';
+      
+      if (errorMessage === 'CONNECTION_ERROR') {
+        toast.error('Unable to connect. Please check your internet connection.');
+        setShowLoginHelp(false);
+      } else if (errorMessage === 'EMAIL_NOT_CONFIRMED') {
+        toast.error('Please confirm your email address before logging in.');
+        setShowLoginHelp(false);
+      } else {
+        // Unknown error
+        toast.error('Login failed. Please try again.');
+        setShowLoginHelp(false);
+      }
     }
   };
 
@@ -43,6 +59,12 @@ export function Login() {
     e.preventDefault();
     if (!signupEmail || !signupPassword || !signupName || !signupUsername) {
       toast.error('Please fill in all fields');
+      return;
+    }
+
+    // Validate password length
+    if (signupPassword.length < 6) {
+      toast.error('Password must be at least 6 characters long');
       return;
     }
 
@@ -68,8 +90,8 @@ export function Login() {
         toast.error('This email is already registered');
       } else if (errorMessage.includes('invalid email')) {
         toast.error('Please enter a valid email address');
-      } else if (errorMessage.includes('Password should be')) {
-        toast.error('Password must be at least 6 characters');
+      } else if (errorMessage.includes('Password should be') || errorMessage.includes('password')) {
+        toast.error('Password must be at least 6 characters long');
       } else {
         toast.error(errorMessage);
       }
@@ -122,6 +144,25 @@ export function Login() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
+                  {showLoginHelp && (
+                    <Alert className="mb-4 bg-yellow-50 border-yellow-200 dark:bg-yellow-950 dark:border-yellow-800">
+                      <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+                      <AlertTitle className="text-yellow-800 dark:text-yellow-200">No Account Found</AlertTitle>
+                      <AlertDescription className="text-sm text-yellow-700 dark:text-yellow-300 space-y-2">
+                        <p className="font-semibold">You need to create test users first!</p>
+                        <div className="bg-white dark:bg-gray-900 p-2 rounded border border-yellow-300 dark:border-yellow-700">
+                          <p className="text-xs font-semibold mb-1">Quick Fix:</p>
+                          <ol className="list-decimal list-inside space-y-0.5 text-xs">
+                            <li>Open file: <code className="bg-yellow-100 dark:bg-yellow-900 px-1 py-0.5 rounded">RUN_THIS_TO_FIX_LOGIN.sql</code></li>
+                            <li>Go to <a href="https://supabase.com/dashboard/project/nrdetgsryanpfxkazcap/sql/new" target="_blank" rel="noopener noreferrer" className="underline font-semibold">Supabase SQL Editor</a></li>
+                            <li>Copy & paste the SQL, click "Run"</li>
+                            <li>Login with: <code className="bg-yellow-100 dark:bg-yellow-900 px-1 py-0.5 rounded">test@example.com</code> / <code className="bg-yellow-100 dark:bg-yellow-900 px-1 py-0.5 rounded">password123</code></li>
+                          </ol>
+                        </div>
+                        <p className="text-xs italic mt-1">Or switch to Sign Up tab to create your own account.</p>
+                      </AlertDescription>
+                    </Alert>
+                  )}
                   <form onSubmit={handleLogin} className="space-y-3 md:space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="login-email">Email</Label>
@@ -263,10 +304,24 @@ export function Login() {
                         type="password"
                         value={signupPassword}
                         onChange={(e) => setSignupPassword(e.target.value)}
-                        placeholder="Create a password"
+                        placeholder="Create a password (min 6 characters)"
                         disabled={isLoading}
-                        className="h-10"
+                        className={`h-10 ${
+                          signupPassword.length > 0 && signupPassword.length < 6
+                            ? 'border-destructive focus:ring-destructive'
+                            : signupPassword.length >= 6
+                            ? 'border-green-500 focus:ring-green-500'
+                            : ''
+                        }`}
                       />
+                      <div className="h-4">
+                        {signupPassword.length > 0 && signupPassword.length < 6 && (
+                          <p className="text-xs text-destructive leading-tight">Password must be at least 6 characters</p>
+                        )}
+                        {signupPassword.length >= 6 && (
+                          <p className="text-xs text-green-500 leading-tight">Password meets requirements</p>
+                        )}
+                      </div>
                     </div>
                     <Button type="submit" className="w-full h-10 mt-3 md:mt-4" disabled={isLoading}>
                       {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

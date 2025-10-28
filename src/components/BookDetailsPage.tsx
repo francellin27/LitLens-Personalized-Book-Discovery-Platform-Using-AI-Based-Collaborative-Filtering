@@ -20,15 +20,18 @@ import {
   Users,
   MessageSquare,
   ThumbsUp,
-  MoreHorizontal
+  MoreHorizontal,
+  Sparkles
 } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { toast } from 'sonner@2.0.3';
 import { copyToClipboard } from '../utils/clipboard';
+import { fetchBooks } from '../lib/supabase-services';
 
 interface BookDetailsPageProps {
   book: Book;
   onBack: () => void;
+  onBookSelect?: (book: Book) => void;
 }
 
 interface ReviewCardProps {
@@ -104,13 +107,14 @@ function ReviewCard({ review }: ReviewCardProps) {
   );
 }
 
-export function BookDetailsPage({ book, onBack }: BookDetailsPageProps) {
+export function BookDetailsPage({ book, onBack, onBookSelect }: BookDetailsPageProps) {
   const [userRating, setUserRating] = useState(book?.userRating || 0);
   const [isFavorited, setIsFavorited] = useState(false);
   const [isInReadingList, setIsInReadingList] = useState(false);
   const [showFullDescription, setShowFullDescription] = useState(false);
   const [showAllReviews, setShowAllReviews] = useState(false);
   const [scrollY, setScrollY] = useState(0);
+  const [similarBooks, setSimilarBooks] = useState<Book[]>([]);
 
   // Handle scroll for dynamic header effects
   useEffect(() => {
@@ -118,6 +122,57 @@ export function BookDetailsPage({ book, onBack }: BookDetailsPageProps) {
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  // Fetch similar books based on genre or author (excluding current book)
+  useEffect(() => {
+    async function loadSimilarBooks() {
+      try {
+        const currentBookId = book.id;
+        
+        // First, try to find books by the same author (excluding current book)
+        const { books: sameAuthorBooks } = await fetchBooks({
+          author: book.author,
+          limit: 25
+        });
+        
+        // IMPORTANT: Filter out the current book - never show the same book
+        const filteredSameAuthor = sameAuthorBooks.filter(b => b.id !== currentBookId);
+        
+        // If we have enough books from the same author, use those
+        if (filteredSameAuthor.length >= 6) {
+          setSimilarBooks(filteredSameAuthor.slice(0, 12));
+          return;
+        }
+        
+        // Otherwise, also fetch books from the same genres
+        const genrePromises = book.genre.map(genre => 
+          fetchBooks({ genre, limit: 20 })
+        );
+        
+        const genreResults = await Promise.all(genrePromises);
+        const allGenreBooks = genreResults.flatMap(result => result.books);
+        
+        // Combine same author books with genre matches
+        const combinedBooks = [...filteredSameAuthor, ...allGenreBooks];
+        
+        // Deduplicate by ID and ENSURE current book is excluded
+        const uniqueBooks = Array.from(
+          new Map(combinedBooks.map(b => [b.id, b])).values()
+        ).filter(b => b.id !== currentBookId);
+        
+        // Sort by rating to show best similar books first
+        uniqueBooks.sort((a, b) => b.rating - a.rating);
+        
+        // Set up to 12 similar books (all different from current book)
+        setSimilarBooks(uniqueBooks.slice(0, 12));
+      } catch (error) {
+        console.error('Error loading similar books:', error);
+        setSimilarBooks([]);
+      }
+    }
+    
+    loadSimilarBooks();
+  }, [book.id, book.author, book.genre]);
 
   const handleRating = (rating: number) => {
     setUserRating(rating);
@@ -460,6 +515,76 @@ export function BookDetailsPage({ book, onBack }: BookDetailsPageProps) {
               </div>
             )}
           </Section>
+
+          {/* Similar Books Section */}
+          {similarBooks.length > 0 && (
+            <Section id="similar-books" className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-primary" />
+                <h3>Similar Books</h3>
+                <Badge variant="secondary" className="text-xs">
+                  {similarBooks.length}
+                </Badge>
+              </div>
+              
+              <div className="relative -mx-4">
+                <div className="overflow-x-auto px-4 pb-2 scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent">
+                  <div className="flex gap-4" style={{ width: 'max-content' }}>
+                    {similarBooks.filter(sb => sb.id !== book.id).map((similarBook) => (
+                      <div
+                        key={similarBook.id}
+                        className="group cursor-pointer flex-shrink-0 w-32 sm:w-40"
+                        onClick={() => {
+                          if (onBookSelect) {
+                            onBookSelect(similarBook);
+                            window.scrollTo({ top: 0, behavior: 'instant' });
+                          }
+                        }}
+                      >
+                        <div className="space-y-2">
+                          <div className="relative aspect-[2/3] rounded-lg overflow-hidden shadow-md group-hover:shadow-xl transition-shadow duration-200">
+                            <ImageWithFallback
+                              src={similarBook.cover}
+                              alt={similarBook.title}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                            <div className="absolute bottom-2 left-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                              <div className="flex items-center gap-1 text-white text-xs">
+                                <StarRating rating={similarBook.rating} size="sm" readonly />
+                                <span className="ml-1">{similarBook.rating.toFixed(1)}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-sm line-clamp-2 leading-tight group-hover:text-primary transition-colors">
+                              {similarBook.title}
+                            </p>
+                            <p className="text-xs text-muted-foreground line-clamp-1">
+                              {similarBook.author}
+                            </p>
+                            {similarBook.genre.some(g => book.genre.includes(g)) && (
+                              <Badge variant="outline" className="text-xs px-1.5 py-0">
+                                {similarBook.genre.find(g => book.genre.includes(g))}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Scroll indicators */}
+                <div className="absolute top-0 right-0 h-full w-8 bg-gradient-to-l from-background to-transparent pointer-events-none" />
+                <div className="absolute top-0 left-0 h-full w-8 bg-gradient-to-r from-background to-transparent pointer-events-none" />
+              </div>
+              
+              <p className="text-xs text-muted-foreground text-center">
+                Books with similar genres or by the same author
+              </p>
+            </Section>
+          )}
 
           {/* Bottom Spacing for Mobile Navigation */}
           <div className="h-20" />

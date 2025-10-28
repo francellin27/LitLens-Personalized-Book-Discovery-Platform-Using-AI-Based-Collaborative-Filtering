@@ -41,40 +41,53 @@ import { HelpPrivacyReporting } from "./components/HelpPrivacyReporting";
 import { MigrationAlert } from "./components/MigrationAlert";
 import { ConnectionStatus } from "./components/ConnectionStatus";
 import { Toaster } from "./components/ui/sonner";
+import { toast } from "sonner@2.0.3";
 import { Book } from "./lib/bookData";
 import { supabase } from "./utils/supabase/client";
 
 function AppContent() {
-  const { user } = useAuth();
-  const [currentPage, setCurrentPage] =
-    useState<PageType>(user?.role === 'admin' ? "admin" : "home");
+  const { user, isLoading } = useAuth();
+  
+  // Initialize page based on user role
+  const getInitialPage = (): PageType => {
+    if (!user) return 'home';
+    return user.role === 'admin' ? 'admin' : 'home';
+  };
+  
+  const [currentPage, setCurrentPage] = useState<PageType>(getInitialPage());
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedBook, setSelectedBook] = useState<Book | null>(
-    null,
-  );
-  const [viewingUserId, setViewingUserId] = useState<
-    string | null
-  >(null);
-  const [viewingDiscussionId, setViewingDiscussionId] = useState<
-    string | null
-  >(null);
+  const [selectedBook, setSelectedBook] = useState<Book | null>(null);
+  const [viewingUserId, setViewingUserId] = useState<string | null>(null);
+  const [viewingDiscussionId, setViewingDiscussionId] = useState<string | null>(null);
   const [previousPage, setPreviousPage] = useState<PageType>("help");
+
+  // Reset all state when user changes (login/logout)
+  useEffect(() => {
+    if (user) {
+      // User logged in - set appropriate page based on role
+      const initialPage = user.role === 'admin' ? 'admin' : 'home';
+      setCurrentPage(initialPage);
+      setSearchQuery("");
+      setSelectedBook(null);
+      setViewingUserId(null);
+      setViewingDiscussionId(null);
+      setPreviousPage("help");
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    } else {
+      // User logged out - reset everything
+      setCurrentPage('home');
+      setSearchQuery("");
+      setSelectedBook(null);
+      setViewingUserId(null);
+      setViewingDiscussionId(null);
+      setPreviousPage("help");
+    }
+  }, [user?.id, user?.role]); // Dependency on user.id ensures this runs on user change
 
   // Ensure scroll to top when page changes
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, [currentPage, viewingUserId, viewingDiscussionId]);
-
-  // Set default page for admin users to admin panel
-  useEffect(() => {
-    if (user?.role === 'admin' && currentPage === 'home') {
-      setCurrentPage('admin');
-    }
-  }, [user?.role, currentPage]);
-
-  if (!user) {
-    return <Login />;
-  }
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -166,6 +179,16 @@ function AppContent() {
 
     switch (currentPage) {
       case "admin":
+        // Only allow admins to access the admin panel
+        if (user?.role !== 'admin') {
+          return (
+            <HomePage
+              onSearch={handleSearch}
+              onBookSelect={handleBookSelect}
+              onViewUser={handleViewUser}
+            />
+          );
+        }
         return <AdminPanel />;
       case "home":
         return (
@@ -275,6 +298,12 @@ function AppContent() {
   };
 
   const handlePageChange = (page: PageType) => {
+    // Prevent non-admin users from accessing admin page
+    if (page === 'admin' && user?.role !== 'admin') {
+      toast.error('You do not have permission to access this page');
+      return;
+    }
+    
     // Track previous page for help topics navigation
     const helpPages: PageType[] = [
       "help-getting-started-account",
@@ -348,10 +377,35 @@ function AppContent() {
   );
 }
 
+// Wrapper to manage user state and force remount on user change
+function AppWrapper() {
+  const { user, isLoading } = useAuth();
+  
+  // Show loading state while checking authentication
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Login />;
+  }
+  
+  // Key forces complete remount when user changes
+  // This ensures NO state from previous user session carries over
+  return <AppContent key={user.id} />;
+}
+
 export default function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <AppWrapper />
     </AuthProvider>
   );
 }

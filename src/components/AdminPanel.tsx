@@ -14,6 +14,7 @@ import {
   updateUserRole,
   updateUserProfile,
   deleteUserAccount,
+  updateUserBooksRead,
   type UserProfile,
   deleteReview,
   updateReview,
@@ -73,6 +74,7 @@ export function AdminPanel({}: AdminPanelProps) {
   const [isLoadingReviews, setIsLoadingReviews] = useState(true);
   const [isLoadingDiscussions, setIsLoadingDiscussions] = useState(true);
   const [isLoadingReports, setIsLoadingReports] = useState(true);
+  const [lastUserUpdate, setLastUserUpdate] = useState<Date>(new Date());
   
   // Analytics data state
   const [analyticsData, setAnalyticsData] = useState<{
@@ -175,14 +177,19 @@ export function AdminPanel({}: AdminPanelProps) {
   const loadUsers = async () => {
     setIsLoadingUsers(true);
     try {
+      console.log('🔄 Loading users...');
       const [allUsers, allAdmins] = await Promise.all([
         fetchAllUsers('user'),
         fetchAllUsers('admin')
       ]);
+      console.log('✅ Users loaded:', allUsers.length, 'users,', allAdmins.length, 'admins');
+      console.log('📊 Sample user data:', allUsers[0]);
       setUsers(allUsers);
       setAdmins(allAdmins);
+      setLastUserUpdate(new Date());
+      toast.success(`Loaded ${allUsers.length} users and ${allAdmins.length} admins`);
     } catch (error) {
-      console.error('Error loading users:', error);
+      console.error('❌ Error loading users:', error);
       toast.error('Failed to load users');
     } finally {
       setIsLoadingUsers(false);
@@ -227,10 +234,18 @@ export function AdminPanel({}: AdminPanelProps) {
   const loadDiscussionReports = async () => {
     setIsLoadingReports(true);
     try {
+      console.log('🔄 Loading discussion reports...');
       const fetchedReports = await fetchAllDiscussionReports();
+      console.log('✅ Discussion reports loaded:', fetchedReports.length, 'reports');
+      console.log('📊 Reports by status:', {
+        pending: fetchedReports.filter(r => r.status === 'pending').length,
+        resolved: fetchedReports.filter(r => r.status === 'resolved').length,
+        dismissed: fetchedReports.filter(r => r.status === 'dismissed').length
+      });
+      console.log('📝 Sample report:', fetchedReports[0]);
       setDiscussionReports(fetchedReports);
     } catch (error: any) {
-      console.error('Error loading discussion reports:', error);
+      console.error('❌ Error loading discussion reports:', error);
       
       // Check if error is due to missing table
       if (error?.code === 'PGRST200' || error?.message?.includes('discussion_reports')) {
@@ -259,6 +274,8 @@ export function AdminPanel({}: AdminPanelProps) {
   const [selectedAdmin, setSelectedAdmin] = useState<any>(null);
   const [isManagingUser, setIsManagingUser] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [isEditingBooksRead, setIsEditingBooksRead] = useState(false);
+  const [editedBooksRead, setEditedBooksRead] = useState<number>(0);
   const [isEditingDiscussion, setIsEditingDiscussion] = useState(false);
   const [selectedDiscussion, setSelectedDiscussion] = useState<any>(null);
   const [selectedRequest, setSelectedRequest] = useState<BookRequest | null>(null);
@@ -298,6 +315,7 @@ export function AdminPanel({}: AdminPanelProps) {
   const [reviewAuthorFilter, setReviewAuthorFilter] = useState('');
   const [reviewPublisherFilter, setReviewPublisherFilter] = useState('');
   const [reviewDateFilter, setReviewDateFilter] = useState('all');
+  const [reportStatusFilter, setReportStatusFilter] = useState<'all' | 'pending' | 'resolved' | 'dismissed'>('pending');
   const [newBook, setNewBook] = useState<Partial<Book>>({
     title: '',
     author: '',
@@ -323,23 +341,31 @@ export function AdminPanel({}: AdminPanelProps) {
   });
 
   // Transform UserProfile to match UserManagementTable expected format
-  const transformedUsers = users.map(user => ({
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    joinDate: user.createdAt,
-    booksRead: user.booksRead
-  }));
+  const transformedUsers = useMemo(() => {
+    const transformed = users.map(user => ({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      joinDate: user.createdAt,
+      booksRead: user.booksRead
+    }));
+    console.log('👥 Transformed Users for Table:', transformed.map(u => ({ name: u.name, booksRead: u.booksRead })));
+    return transformed;
+  }, [users]);
 
-  const transformedAdmins = admins.map(admin => ({
-    id: admin.id,
-    name: admin.name,
-    email: admin.email,
-    role: admin.role,
-    joinDate: admin.createdAt,
-    booksRead: admin.booksRead
-  }));
+  const transformedAdmins = useMemo(() => {
+    const transformed = admins.map(admin => ({
+      id: admin.id,
+      name: admin.name,
+      email: admin.email,
+      role: admin.role,
+      joinDate: admin.createdAt,
+      booksRead: admin.booksRead
+    }));
+    console.log('👑 Transformed Admins for Table:', transformed.map(a => ({ name: a.name, booksRead: a.booksRead })));
+    return transformed;
+  }, [admins]);
 
   // Calculate time ago for discussions
   const getTimeAgo = (dateString: string) => {
@@ -554,6 +580,14 @@ export function AdminPanel({}: AdminPanelProps) {
   };
 
   const adminRatingDistribution = getAdminRatingDistribution();
+
+  // Filter discussion reports based on status filter
+  const filteredDiscussionReports = useMemo(() => {
+    if (reportStatusFilter === 'all') {
+      return discussionReports;
+    }
+    return discussionReports.filter(report => report.status === reportStatusFilter);
+  }, [discussionReports, reportStatusFilter]);
 
   const getRatingLabel = (rating: number) => {
     const labels: { [key: number]: string } = {
@@ -815,6 +849,8 @@ export function AdminPanel({}: AdminPanelProps) {
 
   const handleManageUser = (user: any) => {
     setSelectedUser(user);
+    setEditedBooksRead(user.booksRead || 0);
+    setIsEditingBooksRead(false);
     setIsManagingUser(true);
   };
 
@@ -859,6 +895,35 @@ export function AdminPanel({}: AdminPanelProps) {
     toast.success(`User banning feature coming soon`);
     setIsManagingUser(false);
     setSelectedUser(null);
+  };
+
+  const handleUpdateBooksRead = async () => {
+    if (!selectedUser) return;
+
+    const newCount = Math.max(0, editedBooksRead); // Ensure non-negative
+    
+    if (newCount === selectedUser.booksRead) {
+      toast.info('No changes to save');
+      setIsEditingBooksRead(false);
+      return;
+    }
+
+    try {
+      const success = await updateUserBooksRead(selectedUser.id, newCount);
+      
+      if (success) {
+        await loadUsers(); // Reload users to get updated count
+        toast.success(`Updated books read count to ${newCount}`);
+        setIsEditingBooksRead(false);
+        // Update the selected user's data in the dialog
+        setSelectedUser({ ...selectedUser, booksRead: newCount });
+      } else {
+        toast.error('Failed to update books read count');
+      }
+    } catch (error) {
+      console.error('Error updating books read:', error);
+      toast.error('Failed to update books read count');
+    }
   };
 
   const handlePromoteToAdmin = async (user: any) => {
@@ -992,20 +1057,20 @@ export function AdminPanel({}: AdminPanelProps) {
     // Here you would navigate to the discussion details page
   };
 
-  const handleEditDiscussion = (discussionId: string) => {
-    const discussion = mockDiscussions.find(d => d.id === discussionId);
+  const handleEditDiscussion = async (discussionId: string) => {
+    const discussion = discussions.find(d => d.id === discussionId);
     if (discussion) {
       setSelectedDiscussion(discussion);
       setDiscussionFormData({
         title: discussion.title,
         category: discussion.category,
-        bookTitle: discussion.bookTitle
+        bookTitle: discussion.bookTitle || ''
       });
       setIsEditingDiscussion(true);
     }
   };
 
-  const handleSaveDiscussion = () => {
+  const handleSaveDiscussion = async () => {
     if (!discussionFormData.title.trim()) {
       toast.error('Discussion title is required');
       return;
@@ -1016,16 +1081,35 @@ export function AdminPanel({}: AdminPanelProps) {
       return;
     }
 
-    // Here you would update the discussion in your backend
-    // For now, we'll just show a success message
-    toast.success(`Discussion "${discussionFormData.title}" has been updated successfully`);
-    setIsEditingDiscussion(false);
-    setSelectedDiscussion(null);
-    setDiscussionFormData({
-      title: '',
-      category: '',
-      bookTitle: ''
-    });
+    if (!selectedDiscussion) {
+      toast.error('No discussion selected');
+      return;
+    }
+
+    try {
+      const success = await updateDiscussion(selectedDiscussion.id, {
+        title: discussionFormData.title,
+        category: discussionFormData.category,
+        bookTitle: discussionFormData.bookTitle || undefined
+      });
+
+      if (success) {
+        toast.success(`Discussion "${discussionFormData.title}" has been updated successfully`);
+        await loadDiscussions(); // Reload discussions list
+        setIsEditingDiscussion(false);
+        setSelectedDiscussion(null);
+        setDiscussionFormData({
+          title: '',
+          category: '',
+          bookTitle: ''
+        });
+      } else {
+        toast.error('Failed to update discussion');
+      }
+    } catch (error) {
+      console.error('Error updating discussion:', error);
+      toast.error('Failed to update discussion');
+    }
   };
 
   const handleDeleteDiscussionClick = async (discussionId: string, title: string) => {
@@ -2033,12 +2117,31 @@ export function AdminPanel({}: AdminPanelProps) {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 md:gap-4">
             <div>
               <h2 className="text-lg md:text-2xl mb-0.5 md:mb-1" style={{ color: '#535050' }}>User Management</h2>
-              <p className="text-xs md:text-sm text-muted-foreground">Manage user accounts and administrator privileges</p>
+              <p className="text-xs md:text-sm text-muted-foreground">
+                Manage user accounts and administrator privileges
+                {lastUserUpdate && (
+                  <span className="ml-2 text-xs text-muted-foreground/70">
+                    • Updated {lastUserUpdate.toLocaleTimeString()}
+                  </span>
+                )}
+              </p>
             </div>
-            <Button className="flex items-center gap-2 shadow-md text-sm md:text-base h-9 md:h-10 whitespace-nowrap" style={{ backgroundColor: '#879656' }}>
-              <Plus className="w-3 h-3 md:w-4 md:h-4" />
-              Add User
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="outline"
+                size="sm"
+                onClick={loadUsers}
+                disabled={isLoadingUsers}
+                className="flex items-center gap-2 h-9 md:h-10"
+              >
+                <TrendingUp className={`w-3 h-3 md:w-4 md:h-4 ${isLoadingUsers ? 'animate-spin' : ''}`} />
+                {isLoadingUsers ? 'Refreshing...' : 'Refresh'}
+              </Button>
+              <Button className="flex items-center gap-2 shadow-md text-sm md:text-base h-9 md:h-10 whitespace-nowrap" style={{ backgroundColor: '#879656' }}>
+                <Plus className="w-3 h-3 md:w-4 md:h-4" />
+                Add User
+              </Button>
+            </div>
           </div>
 
           {/* Search Bar for Users */}
@@ -2119,8 +2222,8 @@ export function AdminPanel({}: AdminPanelProps) {
                 <span className="sm:hidden">Discussions</span>
               </TabsTrigger>
               <TabsTrigger value="reports" className="text-xs md:text-sm">
-                <span className="hidden sm:inline">Community Reports (0)</span>
-                <span className="sm:hidden">Reports (0)</span>
+                <span className="hidden sm:inline">Community Reports ({discussionReports.filter(r => r.status === 'pending').length})</span>
+                <span className="sm:hidden">Reports ({discussionReports.filter(r => r.status === 'pending').length})</span>
               </TabsTrigger>
             </TabsList>
 
@@ -2221,9 +2324,40 @@ export function AdminPanel({}: AdminPanelProps) {
 
             {/* Community Reports Tab - Card View */}
             <TabsContent value="reports" className="space-y-4">
-              <div style={{ height: '600px', overflow: 'auto' }}>
-                <div className="space-y-2 p-2">
-                  {discussionReports.map((report) => (
+              {/* Report Status Filter and Refresh */}
+              <div className="flex items-center justify-between gap-3 px-2">
+                <div className="flex items-center gap-3">
+                  <Label className="text-sm whitespace-nowrap">Filter by Status:</Label>
+                  <Select value={reportStatusFilter} onValueChange={(value: any) => setReportStatusFilter(value)}>
+                    <SelectTrigger className="w-[180px] h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Reports ({discussionReports.length})</SelectItem>
+                      <SelectItem value="pending">Pending ({discussionReports.filter(r => r.status === 'pending').length})</SelectItem>
+                      <SelectItem value="resolved">Resolved ({discussionReports.filter(r => r.status === 'resolved').length})</SelectItem>
+                      <SelectItem value="dismissed">Dismissed ({discussionReports.filter(r => r.status === 'dismissed').length})</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  onClick={loadDiscussionReports}
+                  variant="outline"
+                  size="sm"
+                  disabled={isLoadingReports}
+                >
+                  {isLoadingReports ? 'Loading...' : 'Refresh Reports'}
+                </Button>
+              </div>
+
+              <div style={{ height: '550px', overflow: 'auto' }}>
+                {isLoadingReports ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    Loading reports...
+                  </div>
+                ) : (
+                  <div className="space-y-2 p-2">
+                    {filteredDiscussionReports.map((report) => (
                     <Card 
                       key={report.id}
                       className="p-4 border-l-4"
@@ -2271,6 +2405,16 @@ export function AdminPanel({}: AdminPanelProps) {
                           </div>
                         </div>
 
+                        {/* Description - Only show if provided */}
+                        {report.description && (
+                          <div className="pt-2 border-t">
+                            <span className="text-xs text-muted-foreground">Additional Details:</span>
+                            <p className="text-xs mt-1 text-[#535050] bg-[#faf9f7] p-2 rounded">
+                              {report.description}
+                            </p>
+                          </div>
+                        )}
+
                         {/* Action Buttons */}
                         {report.status === 'pending' && (
                           <div className="flex items-center gap-2 pt-2 border-t">
@@ -2298,12 +2442,13 @@ export function AdminPanel({}: AdminPanelProps) {
                     </Card>
                   ))}
 
-                  {discussionReports.length === 0 && (
-                    <div className="text-center py-8 text-muted-foreground">
-                      No community reports found
-                    </div>
-                  )}
-                </div>
+                    {filteredDiscussionReports.length === 0 && (
+                      <div className="text-center py-8 text-muted-foreground">
+                        {reportStatusFilter === 'all' ? 'No community reports found' : `No ${reportStatusFilter} reports`}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </TabsContent>
           </Tabs>

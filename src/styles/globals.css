@@ -261,6 +261,39 @@ html {
   }
 }
 
+/* Custom scrollbar styling for horizontal scrolls */
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+  
+  .scrollbar-track-transparent {
+    scrollbar-color: var(--muted) transparent;
+  }
+  
+  .scrollbar-thumb-muted {
+    scrollbar-color: var(--muted) transparent;
+  }
+  
+  /* Webkit browsers */
+  .scrollbar-thin::-webkit-scrollbar {
+    height: 6px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: var(--muted);
+    border-radius: 3px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+  }
+}
+
 /* Smooth scrolling and touch improvements */
 @layer utilities {
   .smooth-scroll {

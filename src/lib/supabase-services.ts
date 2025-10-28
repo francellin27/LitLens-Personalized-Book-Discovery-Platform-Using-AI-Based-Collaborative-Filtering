@@ -676,38 +676,60 @@ export interface UserProfile {
 
 export async function fetchAllUsers(roleFilter?: 'user' | 'admin'): Promise<UserProfile[]> {
   try {
-    let query = supabase
+    // First, get all profiles
+    let profileQuery = supabase
       .from('profiles')
-      .select(`
-        *,
-        books_read:user_book_status(count)
-      `)
+      .select('*')
       .order('created_at', { ascending: false });
 
     if (roleFilter) {
-      query = query.eq('role', roleFilter);
+      profileQuery = profileQuery.eq('role', roleFilter);
     }
 
-    const { data, error } = await query;
+    const { data: profiles, error: profileError } = await profileQuery;
 
-    if (error) {
-      console.error('Error fetching users:', error);
+    if (profileError) {
+      console.error('❌ Error fetching users:', profileError);
       return [];
     }
 
-    return data.map(profile => ({
-      id: profile.id,
-      name: profile.name || 'Unknown User',
-      username: profile.username,
-      email: profile.email || '',
-      role: profile.role,
-      bio: profile.bio || undefined,
-      favoriteGenres: profile.favorite_genres || [],
-      createdAt: profile.created_at,
-      booksRead: profile.books_read?.[0]?.count || 0,
-    }));
+    console.log(`📊 Fetched ${profiles.length} profiles with role filter: ${roleFilter || 'all'}`);
+
+    // Then, for each profile, count their completed books
+    const usersWithCounts = await Promise.all(
+      profiles.map(async (profile) => {
+        const { count, error: countError } = await supabase
+          .from('user_book_status')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', profile.id)
+          .eq('status', 'completed');
+
+        if (countError) {
+          console.error(`❌ Error counting books for user ${profile.name}:`, countError);
+          console.error('💡 This might be an RLS policy issue. Make sure admins can view all user_book_status records.');
+          console.error('📝 Run migration: /supabase/migrations/011_admin_view_user_book_status.sql');
+        }
+
+        console.log(`📚 User: ${profile.name} (${profile.email}) - Books Read: ${count || 0}${countError ? ' (ERROR - check RLS policies)' : ''}`);
+
+        return {
+          id: profile.id,
+          name: profile.name || 'Unknown User',
+          username: profile.username,
+          email: profile.email || '',
+          role: profile.role,
+          bio: profile.bio || undefined,
+          favoriteGenres: profile.favorite_genres || [],
+          createdAt: profile.created_at,
+          booksRead: count || 0,
+        };
+      })
+    );
+
+    console.log(`✅ Successfully fetched ${usersWithCounts.length} users with book counts`);
+    return usersWithCounts;
   } catch (error) {
-    console.error('Error fetching users:', error);
+    console.error('❌ Error fetching users:', error);
     return [];
   }
 }
@@ -784,6 +806,122 @@ export async function deleteUserAccount(userId: string): Promise<boolean> {
     return true;
   } catch (error) {
     console.error('Error deleting user account:', error);
+    return false;
+  }
+}
+
+export async function updateUserBooksRead(userId: string, targetCount: number): Promise<boolean> {
+  try {
+    console.log(`📝 Updating books read count for user ${userId} to ${targetCount}`);
+    
+    // First, get current count of completed books
+    const { count: currentCount, error: countError } = await supabase
+      .from('user_book_status')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('status', 'completed');
+
+    if (countError) {
+      console.error('Error getting current books read count:', countError);
+      return false;
+    }
+
+    const current = currentCount || 0;
+    console.log(`📊 Current count: ${current}, Target count: ${targetCount}`);
+
+    if (current === targetCount) {
+      console.log('✅ Count already matches target');
+      return true;
+    }
+
+    // Get all books to use as references
+    const { data: books, error: booksError } = await supabase
+      .from('books')
+      .select('id')
+      .limit(100);
+
+    if (booksError || !books || books.length === 0) {
+      console.error('Error fetching books for adjustment:', booksError);
+      return false;
+    }
+
+    if (targetCount > current) {
+      // Need to add more completed books
+      const toAdd = targetCount - current;
+      console.log(`➕ Adding ${toAdd} completed book entries`);
+      
+      // Get existing completed books for this user
+      const { data: existingStatuses } = await supabase
+        .from('user_book_status')
+        .select('book_id')
+        .eq('user_id', userId)
+        .eq('status', 'completed');
+
+      const existingBookIds = new Set(existingStatuses?.map(s => s.book_id) || []);
+      
+      // Find books not yet marked as completed
+      const availableBooks = books.filter(b => !existingBookIds.has(b.id));
+      
+      if (availableBooks.length < toAdd) {
+        console.error(`Not enough books available to add ${toAdd} entries (only ${availableBooks.length} available)`);
+        return false;
+      }
+
+      // Add new completed book entries
+      const newEntries = availableBooks.slice(0, toAdd).map(book => ({
+        user_id: userId,
+        book_id: book.id,
+        status: 'completed' as const,
+        start_date: new Date().toISOString().split('T')[0],
+        finish_date: new Date().toISOString().split('T')[0]
+      }));
+
+      const { error: insertError } = await supabase
+        .from('user_book_status')
+        .insert(newEntries);
+
+      if (insertError) {
+        console.error('Error adding completed books:', insertError);
+        return false;
+      }
+
+      console.log(`✅ Successfully added ${toAdd} completed book entries`);
+    } else {
+      // Need to remove some completed books
+      const toRemove = current - targetCount;
+      console.log(`➖ Removing ${toRemove} completed book entries`);
+
+      // Get completed books for this user
+      const { data: completedBooks, error: fetchError } = await supabase
+        .from('user_book_status')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('status', 'completed')
+        .limit(toRemove);
+
+      if (fetchError || !completedBooks) {
+        console.error('Error fetching completed books to remove:', fetchError);
+        return false;
+      }
+
+      // Delete the entries
+      const idsToDelete = completedBooks.map(b => b.id);
+      const { error: deleteError } = await supabase
+        .from('user_book_status')
+        .delete()
+        .in('id', idsToDelete);
+
+      if (deleteError) {
+        console.error('Error removing completed books:', deleteError);
+        return false;
+      }
+
+      console.log(`✅ Successfully removed ${toRemove} completed book entries`);
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error updating user books read count:', error);
     return false;
   }
 }
@@ -1271,6 +1409,8 @@ export interface DiscussionReport {
 
 export async function fetchAllDiscussionReports(status?: 'pending' | 'resolved' | 'dismissed'): Promise<DiscussionReport[]> {
   try {
+    console.log('🔧 fetchAllDiscussionReports called with status:', status);
+
     let query = supabase
       .from('discussion_reports')
       .select('*')
@@ -1283,11 +1423,20 @@ export async function fetchAllDiscussionReports(status?: 'pending' | 'resolved' 
     const { data, error } = await query;
 
     if (error) {
-      console.error('Error fetching discussion reports:', error);
+      console.error('❌ Supabase error fetching discussion reports:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
       return [];
     }
 
-    return data.map(report => ({
+    if (!data) {
+      console.warn('⚠️ No data returned from discussion_reports query');
+      return [];
+    }
+
+    console.log('✅ Fetched discussion reports from database:', data.length, 'reports');
+    console.log('📋 Raw data sample:', data[0]);
+
+    const mappedReports = data.map(report => ({
       id: report.id,
       discussionId: report.discussion_id,
       reporterId: report.reporter_id,
@@ -1304,8 +1453,11 @@ export async function fetchAllDiscussionReports(status?: 'pending' | 'resolved' 
       resolvedAt: report.resolved_at || undefined,
       adminNotes: report.admin_notes || undefined,
     }));
+
+    console.log('📊 Mapped reports:', mappedReports.length);
+    return mappedReports;
   } catch (error) {
-    console.error('Error fetching discussion reports:', error);
+    console.error('❌ Exception fetching discussion reports:', error);
     return [];
   }
 }
@@ -1321,26 +1473,49 @@ export async function createDiscussionReport(
   description?: string
 ): Promise<DiscussionReport | null> {
   try {
+    console.log('🔧 createDiscussionReport called with:', {
+      discussionId,
+      reporterId,
+      reporterName,
+      contentTitle,
+      contentType,
+      originalAuthor,
+      reason,
+      description
+    });
+
+    const insertData = {
+      discussion_id: discussionId,
+      reporter_id: reporterId,
+      reporter_name: reporterName,
+      content_title: contentTitle,
+      content_type: contentType,
+      original_author: originalAuthor,
+      reason,
+      description: description || null,
+      status: 'pending' as const,
+    };
+
+    console.log('📤 Inserting into discussion_reports:', insertData);
+
     const { data, error } = await supabase
       .from('discussion_reports')
-      .insert({
-        discussion_id: discussionId,
-        reporter_id: reporterId,
-        reporter_name: reporterName,
-        content_title: contentTitle,
-        content_type: contentType,
-        original_author: originalAuthor,
-        reason,
-        description: description || null,
-        status: 'pending',
-      })
+      .insert(insertData)
       .select()
       .single();
 
-    if (error || !data) {
-      console.error('Error creating discussion report:', error);
+    if (error) {
+      console.error('❌ Supabase error creating discussion report:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
       return null;
     }
+
+    if (!data) {
+      console.error('❌ No data returned from insert');
+      return null;
+    }
+
+    console.log('✅ Report created successfully in database:', data);
 
     return {
       id: data.id,
@@ -1360,7 +1535,7 @@ export async function createDiscussionReport(
       adminNotes: data.admin_notes || undefined,
     };
   } catch (error) {
-    console.error('Error creating discussion report:', error);
+    console.error('❌ Exception creating discussion report:', error);
     return null;
   }
 }

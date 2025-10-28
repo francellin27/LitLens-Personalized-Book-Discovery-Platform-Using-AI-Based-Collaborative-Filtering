@@ -14,8 +14,10 @@ import {
   fetchDiscussionById,
   fetchDiscussionReplies,
   createDiscussionReply,
+  createDiscussionReport,
   type Discussion,
-  type DiscussionReply as SupabaseDiscussionReply
+  type DiscussionReply as SupabaseDiscussionReply,
+  type DiscussionReport
 } from "../lib/supabase-services";
 import { copyToClipboard } from "../utils/supabase/clipboard";
 import { 
@@ -121,26 +123,69 @@ export function DiscussionDetailsPage({
     setIsReportDialogOpen(true);
   };
 
-  const handleSubmitReport = () => {
+  const handleSubmitReport = async () => {
     if (!reportReason) {
       toast.error("Please select a reason for reporting");
       return;
     }
 
-    // In a real app, this would submit the report to the backend
-    console.log('Submitting report:', {
-      type: reportType,
-      itemId: reportedItemId,
-      reason: reportReason,
-      description: reportDescription
-    });
+    if (!user || !discussion) {
+      toast.error("You must be logged in to report content");
+      return;
+    }
 
-    toast.success(`${reportType === 'reply' ? 'Reply' : 'Discussion'} reported successfully. Thank you for helping keep our community safe.`);
-    
-    // Reset and close dialog
-    setIsReportDialogOpen(false);
-    setReportReason("");
-    setReportDescription("");
+    try {
+      console.log('📝 Submitting report...', {
+        discussionId: discussion.id,
+        userId: user.id,
+        userName: user.name || user.email || 'Anonymous',
+        discussionTitle: discussion.title,
+        reportType: reportType,
+        reportReason: reportReason
+      });
+
+      // Map the report reason to match the database enum
+      const reasonMap: { [key: string]: DiscussionReport['reason'] } = {
+        'spam': 'Spam/Promotional',
+        'harassment': 'Harassment',
+        'inappropriate': 'Inappropriate Content',
+        'misinformation': 'Misinformation',
+        'copyright': 'Off-topic', // Map copyright to off-topic since it's not in DB enum
+        'off-topic': 'Off-topic',
+        'other': 'Other'
+      };
+
+      const mappedReason = reasonMap[reportReason] || 'Other';
+      console.log('📋 Mapped reason:', mappedReason);
+
+      const report = await createDiscussionReport(
+        discussion.id,
+        user.id,
+        user.name || user.email || 'Anonymous',
+        discussion.title,
+        reportType === 'discussion' ? 'Discussion' : 'Reply',
+        discussion.userName,
+        mappedReason,
+        reportDescription || undefined
+      );
+
+      console.log('✅ Report created:', report);
+
+      if (report) {
+        toast.success(`${reportType === 'reply' ? 'Reply' : 'Discussion'} reported successfully. Thank you for helping keep our community safe.`);
+        
+        // Reset and close dialog
+        setIsReportDialogOpen(false);
+        setReportReason("");
+        setReportDescription("");
+      } else {
+        console.error('❌ Report creation returned null');
+        toast.error("Failed to submit report. Please try again.");
+      }
+    } catch (error) {
+      console.error('❌ Error submitting report:', error);
+      toast.error("Failed to submit report. Please try again.");
+    }
   };
 
   const handleSubmitReply = async () => {

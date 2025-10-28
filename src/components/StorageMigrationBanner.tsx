@@ -3,7 +3,7 @@ import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import { Button } from './ui/button';
 import { Database, AlertCircle, CheckCircle2, X, ExternalLink } from 'lucide-react';
 import { supabase } from '../utils/supabase/client';
-import { copyToClipboard } from "../utils/supabase/clipboard";
+import { copyToClipboard } from '../utils/clipboard';
 
 export function StorageMigrationBanner() {
   const [isChecking, setIsChecking] = useState(false);

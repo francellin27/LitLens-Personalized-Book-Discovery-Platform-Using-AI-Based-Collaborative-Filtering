@@ -184,15 +184,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // Login function
   const login = async (email: string, password: string): Promise<boolean> => {
+    setIsLoading(true);
+    
+    // Set a timeout to prevent infinite loading (30 seconds for slower connections)
+    const timeoutId = setTimeout(() => {
+      if (process.env.NODE_ENV === 'development') {
+        console.debug('[Auth] Login taking longer than expected, resetting loading state');
+      }
+      setIsLoading(false);
+    }, 30000);
+    
     try {
-      setIsLoading(true);
-      
-      // Set a timeout to prevent infinite loading
-      const timeoutId = setTimeout(() => {
-        console.warn('Login timeout - resetting loading state');
-        setIsLoading(false);
-      }, 15000); // 15 second timeout
-      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -201,14 +203,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
       clearTimeout(timeoutId);
 
       if (error) {
-        console.error('Login error:', error);
         setIsLoading(false);
         
-        // Check for connection errors
+        // Check for connection errors - these should throw
         if (error.message?.includes('fetch') || error.name === 'AuthRetryableFetchError') {
-          throw new Error('Unable to connect to authentication service. Please check your internet connection or try again later.');
+          throw new Error('CONNECTION_ERROR');
         }
         
+        // Check for email confirmation
+        if (error.message?.includes('Email not confirmed')) {
+          throw new Error('EMAIL_NOT_CONFIRMED');
+        }
+        
+        // All other auth errors (invalid credentials, etc) - return false
+        // This avoids throwing for normal login failures
+        console.log('Authentication failed:', error.message);
         return false;
       }
 
@@ -221,14 +230,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setIsLoading(false);
       return false;
     } catch (error: any) {
-      console.error('Login error:', error);
+      clearTimeout(timeoutId);
       setIsLoading(false);
       
-      // Re-throw connection errors so they can be displayed to the user
-      if (error.message?.includes('connect') || error.message?.includes('fetch')) {
+      // Only re-throw if it's one of our custom errors
+      if (error.message === 'CONNECTION_ERROR' || error.message === 'EMAIL_NOT_CONFIRMED') {
         throw error;
       }
       
+      // For unexpected errors, log and return false
+      console.error('Unexpected login error:', error);
       return false;
     }
   };
@@ -243,11 +254,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       setIsLoading(true);
 
-      // Set a timeout to prevent infinite loading
+      // Set a timeout to prevent infinite loading (30 seconds for slower connections)
       const timeoutId = setTimeout(() => {
-        console.warn('Signup timeout - resetting loading state');
+        if (process.env.NODE_ENV === 'development') {
+          console.debug('[Auth] Signup taking longer than expected, resetting loading state');
+        }
         setIsLoading(false);
-      }, 15000); // 15 second timeout
+      }, 30000);
 
       // Check username availability first
       const isAvailable = await checkUsernameAvailability(username);
@@ -298,12 +311,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       setIsLoading(true);
       
-      // Set a timeout to prevent infinite loading
+      // Set a timeout to prevent infinite loading (10 seconds for logout)
       const timeoutId = setTimeout(() => {
-        console.warn('Logout timeout - resetting state anyway');
+        if (process.env.NODE_ENV === 'development') {
+          console.debug('[Auth] Logout taking longer than expected, clearing state anyway');
+        }
         setUser(null);
         setIsLoading(false);
-      }, 5000); // 5 second timeout for logout
+      }, 10000);
       
       // Sign out from Supabase - this clears all auth tokens and sessions
       const { error } = await supabase.auth.signOut({ scope: 'global' });
@@ -323,7 +338,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // Force a small delay to ensure all cleanup is complete
       await new Promise(resolve => setTimeout(resolve, 100));
       
-      console.log('Logout complete - session cleared');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Auth] Logout complete - session cleared');
+      }
     } catch (error) {
       console.error('Logout error:', error);
       // Always ensure we clear state even if logout fails
