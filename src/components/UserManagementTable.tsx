@@ -1,6 +1,6 @@
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { Edit, Trash2, Users as UsersIcon, Shield } from 'lucide-react';
+import { Edit, Trash2, Users as UsersIcon, Shield, Search } from 'lucide-react';
 
 interface User {
   id: string;
@@ -16,31 +16,48 @@ interface UserManagementTableProps {
   onEditUser?: (user: User) => void;
   onDeleteUser?: (user: User) => void;
   type?: 'users' | 'admins';
+  searchQuery?: string;
 }
 
 export function UserManagementTable({ 
   users, 
   onEditUser, 
   onDeleteUser,
-  type = 'users'
+  type = 'users',
+  searchQuery = ''
 }: UserManagementTableProps) {
   
   const isAdmin = type === 'admins';
+  const isSearching = searchQuery.trim().length > 0;
 
   if (users.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
-        {isAdmin ? (
-          <Shield className="w-16 h-16 text-muted-foreground opacity-30 mb-4" />
+        {isSearching ? (
+          <>
+            <Search className="w-16 h-16 text-muted-foreground opacity-30 mb-4" />
+            <h3 className="text-lg text-muted-foreground mb-1">
+              No Results Found
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              No {isAdmin ? 'administrators' : 'users'} match your search for "{searchQuery}"
+            </p>
+          </>
         ) : (
-          <UsersIcon className="w-16 h-16 text-muted-foreground opacity-30 mb-4" />
+          <>
+            {isAdmin ? (
+              <Shield className="w-16 h-16 text-muted-foreground opacity-30 mb-4" />
+            ) : (
+              <UsersIcon className="w-16 h-16 text-muted-foreground opacity-30 mb-4" />
+            )}
+            <h3 className="text-lg text-muted-foreground mb-1">
+              {isAdmin ? 'No Administrators Found' : 'No Users Found'}
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {isAdmin ? 'Add administrators to manage the platform' : 'Start adding users to the platform'}
+            </p>
+          </>
         )}
-        <h3 className="text-lg text-muted-foreground mb-1">
-          {isAdmin ? 'No Administrators Found' : 'No Users Found'}
-        </h3>
-        <p className="text-sm text-muted-foreground">
-          {isAdmin ? 'Add administrators to manage the platform' : 'Start adding users to the platform'}
-        </p>
       </div>
     );
   }

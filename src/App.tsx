@@ -208,7 +208,11 @@ function AppContent() {
         );
       case "profile":
         return (
-          <UserProfile onViewUser={handleViewUser} onPageChange={handlePageChange} />
+          <UserProfile 
+            onViewUser={handleViewUser} 
+            onPageChange={handlePageChange}
+            onViewDiscussion={handleViewDiscussion}
+          />
         );
       case "browse":
         return (
@@ -394,7 +398,12 @@ function AppWrapper() {
   }
 
   if (!user) {
-    return <Login />;
+    return (
+      <>
+        <Login />
+        <Toaster />
+      </>
+    );
   }
   
   // Key forces complete remount when user changes

@@ -164,10 +164,12 @@
     --color-gray-100: oklch(.967 .003 264.542);
     --color-gray-200: oklch(.928 .006 264.531);
     --color-gray-300: oklch(.872 .01 258.338);
+    --color-gray-400: oklch(.707 .022 261.325);
     --color-gray-600: oklch(.446 .03 256.802);
     --color-gray-700: oklch(.373 .034 259.733);
     --color-gray-800: oklch(.278 .033 256.848);
     --color-gray-900: oklch(.21 .034 264.665);
+    --color-gray-950: oklch(.13 .028 261.692);
     --color-black: #000;
     --color-white: #fff;
     --spacing: .25rem;
@@ -347,6 +349,9 @@
     letter-spacing: inherit;
     color: inherit;
     opacity: 1;
+    --lightningcss-light: initial;
+    --lightningcss-dark: ;
+    color-scheme: light;
     background-color: #0000;
     border-radius: 0;
   }
@@ -358,6 +363,9 @@
     letter-spacing: inherit;
     color: inherit;
     opacity: 1;
+    --lightningcss-light: initial;
+    --lightningcss-dark: ;
+    color-scheme: light;
     background-color: #0000;
     border-radius: 0;
   }
@@ -940,6 +948,10 @@
 
   .hidden {
     display: none;
+  }
+
+  .inline {
+    display: inline;
   }
 
   .inline-block {
@@ -3701,8 +3713,26 @@
   }
 
   @media (hover: hover) {
+    .hover\:border-blue-200:hover {
+      border-color: var(--color-blue-200);
+    }
+  }
+
+  @media (hover: hover) {
     .hover\:border-blue-400:hover {
       border-color: var(--color-blue-400);
+    }
+  }
+
+  @media (hover: hover) {
+    .hover\:border-gray-200:hover {
+      border-color: var(--color-gray-200);
+    }
+  }
+
+  @media (hover: hover) {
+    .hover\:border-green-200:hover {
+      border-color: var(--color-green-200);
     }
   }
 
@@ -3811,6 +3841,18 @@
       .hover\:bg-destructive\/90:hover {
         background-color: color-mix(in oklab, var(--destructive) 90%, transparent);
       }
+    }
+  }
+
+  @media (hover: hover) {
+    .hover\:bg-gray-50:hover {
+      background-color: var(--color-gray-50);
+    }
+  }
+
+  @media (hover: hover) {
+    .hover\:bg-green-50:hover {
+      background-color: var(--color-green-50);
     }
   }
 
@@ -4003,6 +4045,12 @@
   }
 
   @media (hover: hover) {
+    .hover\:text-foreground:hover {
+      color: var(--foreground);
+    }
+  }
+
+  @media (hover: hover) {
     .hover\:text-orange-700:hover {
       color: var(--color-orange-700);
     }
@@ -4167,6 +4215,10 @@
   .focus-visible\:ring-\[3px\]:focus-visible {
     --tw-ring-shadow: var(--tw-ring-inset, ) 0 0 0 calc(3px + var(--tw-ring-offset-width)) var(--tw-ring-color, currentcolor);
     box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
+  }
+
+  .focus-visible\:ring-destructive:focus-visible {
+    --tw-ring-color: var(--destructive);
   }
 
   .focus-visible\:ring-destructive\/20:focus-visible {
@@ -5927,6 +5979,10 @@
     color: var(--color-gray-300);
   }
 
+  .dark\:text-gray-400:is(.dark *) {
+    color: var(--color-gray-400);
+  }
+
   .dark\:text-gray-600:is(.dark *) {
     color: var(--color-gray-600);
   }
@@ -6016,6 +6072,24 @@
   }
 
   @media (hover: hover) {
+    .dark\:hover\:border-blue-800:is(.dark *):hover {
+      border-color: var(--color-blue-800);
+    }
+  }
+
+  @media (hover: hover) {
+    .dark\:hover\:border-gray-800:is(.dark *):hover {
+      border-color: var(--color-gray-800);
+    }
+  }
+
+  @media (hover: hover) {
+    .dark\:hover\:border-green-800:is(.dark *):hover {
+      border-color: var(--color-green-800);
+    }
+  }
+
+  @media (hover: hover) {
     .dark\:hover\:bg-accent\/50:is(.dark *):hover {
       background-color: var(--accent);
     }
@@ -6047,6 +6121,42 @@
     @supports (color: color-mix(in lab, red, red)) {
       .dark\:hover\:bg-blue-800\/30:is(.dark *):hover {
         background-color: color-mix(in oklab, var(--color-blue-800) 30%, transparent);
+      }
+    }
+  }
+
+  @media (hover: hover) {
+    .dark\:hover\:bg-blue-950\/20:is(.dark *):hover {
+      background-color: color-mix(in srgb, oklch(.282 .091 267.935) 20%, transparent);
+    }
+
+    @supports (color: color-mix(in lab, red, red)) {
+      .dark\:hover\:bg-blue-950\/20:is(.dark *):hover {
+        background-color: color-mix(in oklab, var(--color-blue-950) 20%, transparent);
+      }
+    }
+  }
+
+  @media (hover: hover) {
+    .dark\:hover\:bg-gray-950\/20:is(.dark *):hover {
+      background-color: color-mix(in srgb, oklch(.13 .028 261.692) 20%, transparent);
+    }
+
+    @supports (color: color-mix(in lab, red, red)) {
+      .dark\:hover\:bg-gray-950\/20:is(.dark *):hover {
+        background-color: color-mix(in oklab, var(--color-gray-950) 20%, transparent);
+      }
+    }
+  }
+
+  @media (hover: hover) {
+    .dark\:hover\:bg-green-950\/20:is(.dark *):hover {
+      background-color: color-mix(in srgb, oklch(.266 .065 152.934) 20%, transparent);
+    }
+
+    @supports (color: color-mix(in lab, red, red)) {
+      .dark\:hover\:bg-green-950\/20:is(.dark *):hover {
+        background-color: color-mix(in oklab, var(--color-green-950) 20%, transparent);
       }
     }
   }

@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useAuth } from '../lib/auth-supabase';
+import { supabase } from '../utils/supabase/client';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
+import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
 import { BookOpen, Loader2, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 
@@ -19,64 +21,156 @@ export function Login() {
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
   const [showSetupAlert, setShowSetupAlert] = useState(false);
   const [showLoginHelp, setShowLoginHelp] = useState(false);
-  const { login, signup, isLoading, checkUsernameAvailability } = useAuth();
+  const [loginError, setLoginError] = useState<string>('');
+  const [showErrorDialog, setShowErrorDialog] = useState(false);
+  const [errorDialogMessage, setErrorDialogMessage] = useState('');
+  const [errorDialogTitle, setErrorDialogTitle] = useState('Login Failed');
+  const { login, signup, isLoading: isAuthLoading, checkUsernameAvailability } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Use isSubmitting for the button state primarily during the action
+  // If isAuthLoading is true but we are not submitting, it means global auth check is happening
+  const isLoading = isSubmitting || isAuthLoading;
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
+    setLoginError(''); // Clear previous errors
+    setShowLoginHelp(false); // Clear help message
+    
+    console.log('=== LOGIN ATTEMPT STARTED ===');
+    console.log('[Login UI] Form submitted');
+    console.log('[Login UI] Email:', loginEmail);
+    console.log('[Login UI] Password length:', loginPassword.length);
+    
     if (!loginEmail || !loginPassword) {
-      toast.error('Please fill in all fields');
+      console.log('[Login UI] Empty fields, showing error dialog');
+      const errorMsg = 'Please fill in all fields';
+      setLoginError(errorMsg); // Set inline error
+      setErrorDialogTitle('Login Failed');
+      setErrorDialogMessage(errorMsg);
+      setShowErrorDialog(true);
+      toast.error(errorMsg);
       return;
     }
 
+    setIsSubmitting(true);
+
     try {
       const success = await login(loginEmail, loginPassword);
-      if (!success) {
-        // Login failed - could be wrong password or no account
-        toast.error('Invalid email or password. Please check your credentials and try again.');
-        // Show helpful setup instructions
-        setShowLoginHelp(true);
+      console.log('[Login UI] Login returned:', success);
+      console.log('[Login UI] Type:', typeof success);
+      
+      if (success === false || !success) {
+        // Login failed
+        console.log('[Login UI] Handling failed login...');
+        
+        const errorMsg = 'Invalid email or password';
+        
+        console.log('[Login UI] Setting error message:', errorMsg);
+        setLoginError(errorMsg); // Set inline error
+        setLoginPassword(''); // Clear password field
+        setErrorDialogTitle('Login Failed');
+        setErrorDialogMessage(errorMsg);
+        console.log('[Login UI] About to show error dialog...');
+        setShowErrorDialog(true);
+        console.log('[Login UI] showErrorDialog state set to true');
+        toast.error(errorMsg);
+        console.log('[Login UI] Toast shown, returning');
+        return;
       }
-      // If success, don't show toast - let the app redirect naturally
+      
+      if (success === true) {
+        // Success - clear any errors
+        setLoginError('');
+        setShowLoginHelp(false);
+        toast.success('Successfully logged in!');
+        return;
+      }
+      
+      // Unexpected return value
+      const errorMsg = 'Invalid email or password';
+      setLoginError(errorMsg);
+      setLoginPassword(''); // Clear password field
+      setErrorDialogTitle('Login Failed');
+      setErrorDialogMessage(errorMsg);
+      setShowErrorDialog(true);
+      toast.error(errorMsg);
     } catch (error: any) {
       // Handle specific thrown errors (connection issues, etc)
       const errorMessage = error?.message || '';
       
       if (errorMessage === 'CONNECTION_ERROR') {
-        toast.error('Unable to connect. Please check your internet connection.');
-        setShowLoginHelp(false);
+        const errorMsg = 'Unable to connect to the server. Please check your internet connection and try again.';
+        setLoginError(errorMsg);
+        setLoginPassword(''); // Clear password field
+        setErrorDialogTitle('Connection Error');
+        setErrorDialogMessage(errorMsg);
+        setShowErrorDialog(true);
+        toast.error(errorMsg);
       } else if (errorMessage === 'EMAIL_NOT_CONFIRMED') {
-        toast.error('Please confirm your email address before logging in.');
-        setShowLoginHelp(false);
+        const errorMsg = 'Please confirm your email address before logging in.';
+        setLoginError(errorMsg);
+        setLoginPassword(''); // Clear password field
+        setErrorDialogTitle('Email Not Confirmed');
+        setErrorDialogMessage(errorMsg);
+        setShowErrorDialog(true);
+        toast.error(errorMsg);
       } else {
-        // Unknown error
-        toast.error('Login failed. Please try again.');
-        setShowLoginHelp(false);
+        // Unknown error - treat as incorrect credentials
+        const errorMsg = 'Invalid email or password';
+        setLoginError(errorMsg);
+        setLoginPassword(''); // Clear password field
+        setErrorDialogTitle('Login Failed');
+        setErrorDialogMessage(errorMsg);
+        setShowErrorDialog(true);
+        toast.error(errorMsg);
       }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
     if (!signupEmail || !signupPassword || !signupName || !signupUsername) {
-      toast.error('Please fill in all fields');
+      const errorMsg = 'Please fill in all fields';
+      setErrorDialogTitle('Signup Failed');
+      setErrorDialogMessage(errorMsg);
+      setShowErrorDialog(true);
+      toast.error(errorMsg);
       return;
     }
 
     // Validate password length
     if (signupPassword.length < 6) {
-      toast.error('Password must be at least 6 characters long');
+      const errorMsg = 'Password must be at least 6 characters long';
+      setErrorDialogTitle('Signup Failed');
+      setErrorDialogMessage(errorMsg);
+      setShowErrorDialog(true);
+      toast.error(errorMsg);
       return;
     }
 
     if (usernameAvailable === false) {
+      const errorMsg = 'This username is already taken. Please choose a different username.';
+      setErrorDialogTitle('Username Taken');
+      setErrorDialogMessage(errorMsg);
+      setShowErrorDialog(true);
       toast.error('Username is already taken');
       return;
     }
+
+    setIsSubmitting(true);
 
     try {
       const success = await signup(signupEmail, signupPassword, signupName, signupUsername);
       if (success) {
         setShowSetupAlert(false);
+        toast.success('Account created successfully!');
         // Don't show success toast here - let the app redirect naturally
       }
     } catch (error: any) {
@@ -85,16 +179,43 @@ export function Login() {
       
       if (errorMessage.includes('Email signups are disabled')) {
         setShowSetupAlert(true);
-        toast.error('Email signups are currently disabled. Please see the setup instructions below.');
+        const errorMsg = 'Email signups are currently disabled. Please see the setup instructions below.';
+        setErrorDialogTitle('Setup Required');
+        setErrorDialogMessage(errorMsg);
+        setShowErrorDialog(true);
+        toast.error('Email signups are disabled');
       } else if (errorMessage.includes('already registered')) {
-        toast.error('This email is already registered');
+        const errorMsg = 'This email is already registered. Please use a different email or try logging in.';
+        setErrorDialogTitle('Email Already Registered');
+        setErrorDialogMessage(errorMsg);
+        setShowErrorDialog(true);
+        toast.error('Email already registered');
       } else if (errorMessage.includes('invalid email')) {
-        toast.error('Please enter a valid email address');
+        const errorMsg = 'Please enter a valid email address.';
+        setErrorDialogTitle('Invalid Email');
+        setErrorDialogMessage(errorMsg);
+        setShowErrorDialog(true);
+        toast.error('Invalid email');
       } else if (errorMessage.includes('Password should be') || errorMessage.includes('password')) {
-        toast.error('Password must be at least 6 characters long');
+        const errorMsg = 'Password must be at least 6 characters long.';
+        setErrorDialogTitle('Invalid Password');
+        setErrorDialogMessage(errorMsg);
+        setShowErrorDialog(true);
+        toast.error('Password too short');
+      } else if (errorMessage.includes('duplicate') || errorMessage.includes('unique') || errorMessage.includes('username')) {
+        const errorMsg = 'This username is already taken. Please choose a different username.';
+        setErrorDialogTitle('Username Taken');
+        setErrorDialogMessage(errorMsg);
+        setShowErrorDialog(true);
+        toast.error('Username taken');
       } else {
+        setErrorDialogTitle('Signup Failed');
+        setErrorDialogMessage(errorMessage);
+        setShowErrorDialog(true);
         toast.error(errorMessage);
       }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -144,6 +265,15 @@ export function Login() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
+                  {loginError && (
+                    <Alert variant="destructive" className="mb-4">
+                      <XCircle className="h-4 w-4" />
+                      <AlertTitle>Login Failed</AlertTitle>
+                      <AlertDescription>
+                        {loginError}
+                      </AlertDescription>
+                    </Alert>
+                  )}
                   {showLoginHelp && (
                     <Alert className="mb-4 bg-yellow-50 border-yellow-200 dark:bg-yellow-950 dark:border-yellow-800">
                       <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
@@ -170,10 +300,14 @@ export function Login() {
                         id="login-email"
                         type="email"
                         value={loginEmail}
-                        onChange={(e) => setLoginEmail(e.target.value)}
+                        onChange={(e) => {
+                          setLoginEmail(e.target.value);
+                          // Clear error when user starts typing
+                          if (loginError) setLoginError('');
+                        }}
                         placeholder="user@example.com"
                         disabled={isLoading}
-                        className="h-11"
+                        className={`h-11 ${loginError ? 'border-destructive focus-visible:ring-destructive' : ''}`}
                       />
                     </div>
                     <div className="space-y-2">
@@ -182,10 +316,14 @@ export function Login() {
                         id="login-password"
                         type="password"
                         value={loginPassword}
-                        onChange={(e) => setLoginPassword(e.target.value)}
+                        onChange={(e) => {
+                          setLoginPassword(e.target.value);
+                          // Clear error when user starts typing
+                          if (loginError) setLoginError('');
+                        }}
                         placeholder="password"
                         disabled={isLoading}
-                        className="h-11"
+                        className={`h-11 ${loginError ? 'border-destructive focus-visible:ring-destructive' : ''}`}
                       />
                     </div>
                     <Button type="submit" className="w-full h-10 md:h-11 mt-4 md:mt-6" disabled={isLoading}>
@@ -334,6 +472,29 @@ export function Login() {
           </Tabs>
         </div>
       </div>
+
+      {/* Error Popup Dialog */}
+      <AlertDialog open={showErrorDialog} onOpenChange={setShowErrorDialog}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive text-xl">
+              <XCircle className="h-6 w-6" />
+              {errorDialogTitle}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-base pt-2 text-foreground">
+              {errorDialogMessage}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction 
+              onClick={() => setShowErrorDialog(false)}
+              className="bg-primary hover:bg-primary/90"
+            >
+              OK
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

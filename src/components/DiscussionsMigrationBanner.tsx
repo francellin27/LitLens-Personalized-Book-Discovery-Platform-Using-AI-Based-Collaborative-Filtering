@@ -1,7 +1,7 @@
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { Button } from "./ui/button";
 import { AlertTriangle, ExternalLink } from "lucide-react";
-import { copyToClipboard } from "../utils/supabase/clipboard";
+import { copyToClipboard } from "../utils/clipboard";
 import { toast } from "sonner@2.0.3";
 
 export function DiscussionsMigrationBanner() {

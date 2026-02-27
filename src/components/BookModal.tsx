@@ -41,7 +41,7 @@ import { toast } from 'sonner@2.0.3';
 import { useAuth } from '../lib/auth-supabase';
 import { getUserBookStatus, setUserBookStatus, removeUserBookStatus, logReadingDates, createReview, fetchReviewsForBook } from '../lib/supabase-services';
 import { handleLogBookWithSupabase } from '../lib/bookModalHandlers';
-import { copyToClipboard } from "../utils/supabase/clipboard";
+import { copyToClipboard } from '../utils/clipboard';
 
 interface BookModalProps {
   book: Book | null;

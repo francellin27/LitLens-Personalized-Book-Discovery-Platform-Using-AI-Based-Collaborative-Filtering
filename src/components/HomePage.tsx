@@ -441,15 +441,25 @@ export function HomePage({ onSearch, onBookSelect, onViewUser }: HomePageProps) 
             </p>
           )}
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          {personalizedRecommendations.map((recommendation) => (
-            <RecommendationCard 
-              key={recommendation.book.id} 
-              recommendation={recommendation} 
-              onBookClick={handleBookClick} 
-            />
-          ))}
-        </div>
+        {personalizedRecommendations.length > 0 ? (
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {personalizedRecommendations.map((recommendation) => (
+              <RecommendationCard 
+                key={recommendation.book.id} 
+                recommendation={recommendation} 
+                onBookClick={handleBookClick} 
+              />
+            ))}
+          </div>
+        ) : (
+          <Card className="p-8 text-center">
+            <Star className="w-12 h-12 mx-auto mb-3 text-muted-foreground" />
+            <p className="text-muted-foreground">No recommendations available</p>
+            <p className="text-sm text-muted-foreground mt-2">
+              {booksLoading ? 'Loading books...' : 'Start exploring books to get personalized recommendations!'}
+            </p>
+          </Card>
+        )}
       </section>
       )}
 
@@ -461,34 +471,53 @@ export function HomePage({ onSearch, onBookSelect, onViewUser }: HomePageProps) 
           <h2 className="text-2xl">Featured Books</h2>
         </div>
         
-        <Tabs defaultValue="most-viewed" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="most-viewed" className="flex items-center gap-2">
-              <Eye className="w-4 h-4" />
-              Most Viewed
-            </TabsTrigger>
-            <TabsTrigger value="most-read" className="flex items-center gap-2">
-              <BookOpen className="w-4 h-4" />
-              Most Read
-            </TabsTrigger>
-            <TabsTrigger value="top-rated" className="flex items-center gap-2">
-              <Star className="w-4 h-4" />
-              Top Rated
-            </TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value="most-viewed" className="mt-6">
-            <BookGrid books={mostViewedBooks.slice(0, 8)} onBookClick={handleBookClick} />
-          </TabsContent>
-          
-          <TabsContent value="most-read" className="mt-6">
-            <BookGrid books={mostReadBooks.slice(0, 8)} onBookClick={handleBookClick} />
-          </TabsContent>
-          
-          <TabsContent value="top-rated" className="mt-6">
-            <BookGrid books={topRatedBooks.slice(0, 8)} onBookClick={handleBookClick} />
-          </TabsContent>
-        </Tabs>
+        {booksLoading ? (
+          <Card className="p-8 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-3" />
+            <p className="text-muted-foreground">Loading featured books...</p>
+          </Card>
+        ) : (
+          <Tabs defaultValue="most-viewed" className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="most-viewed" className="flex items-center gap-2">
+                <Eye className="w-4 h-4" />
+                Most Viewed
+              </TabsTrigger>
+              <TabsTrigger value="most-read" className="flex items-center gap-2">
+                <BookOpen className="w-4 h-4" />
+                Most Read
+              </TabsTrigger>
+              <TabsTrigger value="top-rated" className="flex items-center gap-2">
+                <Star className="w-4 h-4" />
+                Top Rated
+              </TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="most-viewed" className="mt-6">
+              <BookGrid 
+                books={mostViewedBooks.slice(0, 8)} 
+                onBookClick={handleBookClick}
+                emptyMessage="No books have been viewed yet. Be the first to explore our collection!"
+              />
+            </TabsContent>
+            
+            <TabsContent value="most-read" className="mt-6">
+              <BookGrid 
+                books={mostReadBooks.slice(0, 8)} 
+                onBookClick={handleBookClick}
+                emptyMessage="No books have been read yet. Start your reading journey today!"
+              />
+            </TabsContent>
+            
+            <TabsContent value="top-rated" className="mt-6">
+              <BookGrid 
+                books={topRatedBooks.slice(0, 8)} 
+                onBookClick={handleBookClick}
+                emptyMessage="No rated books yet. Be the first to rate and review our books!"
+              />
+            </TabsContent>
+          </Tabs>
+        )}
       </section>
       )}
 

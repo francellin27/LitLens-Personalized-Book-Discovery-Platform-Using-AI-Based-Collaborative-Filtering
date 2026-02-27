@@ -1,43 +1,52 @@
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Button } from "./ui/button";
-import { Badge } from "./ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
-import { Separator } from "./ui/separator";
-import { Textarea } from "./ui/textarea";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
-import { Label } from "./ui/label";
-import { Book } from "../lib/bookData";
-import { toast } from "sonner@2.0.3";
-import { useAuth } from "../lib/auth-supabase";
+import { useState, useEffect } from 'react';
+import { useAuth } from '../lib/auth-supabase';
+import { Button } from './ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Avatar, AvatarImage, AvatarFallback } from './ui/avatar';
+import { Badge } from './ui/badge';
+import { Textarea } from './ui/textarea';
+import { Label } from './ui/label';
+import { Separator } from './ui/separator';
 import {
-  fetchDiscussionById,
-  fetchDiscussionReplies,
-  createDiscussionReply,
-  createDiscussionReport,
-  type Discussion,
-  type DiscussionReply as SupabaseDiscussionReply,
-  type DiscussionReport
-} from "../lib/supabase-services";
-import { copyToClipboard } from "../utils/supabase/clipboard";
-import { 
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog';
+import {
   ArrowLeft,
-  MessageSquare, 
-  Heart, 
+  MessageSquare,
+  Heart,
   Share,
-  ThumbsUp,
+  Bookmark,
   Flag,
   Clock,
-  Bookmark,
-  MoreHorizontal,
   Send,
+  ThumbsUp,
   Zap,
   Shield,
   AlertTriangle,
   FileText,
   Copyright,
-  HelpCircle
-} from "lucide-react";
+  HelpCircle,
+} from 'lucide-react';
+import { toast } from 'sonner@2.0.3';
+import { ShareDialog } from './ShareDialog';
+import { Book } from "../lib/bookData";
+import { 
+  fetchDiscussionById, 
+  fetchDiscussionReplies, 
+  createDiscussionReply,
+  createDiscussionReport,
+  saveDiscussion,
+  unsaveDiscussion,
+  checkIfDiscussionSaved,
+  type Discussion,
+  type DiscussionReply as SupabaseDiscussionReply,
+  type DiscussionReport
+} from "../lib/supabase-services";
 
 interface DiscussionDetailsPageProps {
   discussionId: string;
@@ -58,7 +67,9 @@ export function DiscussionDetailsPage({
   const [isLoading, setIsLoading] = useState(true);
   const [newReply, setNewReply] = useState("");
   const [isDiscussionLiked, setIsDiscussionLiked] = useState(false);
+  const [isDiscussionSaved, setIsDiscussionSaved] = useState(false);
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
+  const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
   const [reportType, setReportType] = useState<"discussion" | "reply">("discussion");
   const [reportedItemId, setReportedItemId] = useState<string>("");
   const [reportReason, setReportReason] = useState("");
@@ -68,6 +79,19 @@ export function DiscussionDetailsPage({
   useEffect(() => {
     loadDiscussion();
   }, [discussionId]);
+
+  // Check if discussion is saved
+  useEffect(() => {
+    if (user && discussionId) {
+      checkSavedStatus();
+    }
+  }, [user, discussionId]);
+
+  const checkSavedStatus = async () => {
+    if (!user) return;
+    const isSaved = await checkIfDiscussionSaved(user.id, discussionId);
+    setIsDiscussionSaved(isSaved);
+  };
 
   const loadDiscussion = async () => {
     setIsLoading(true);
@@ -106,12 +130,39 @@ export function DiscussionDetailsPage({
     toast.success("Reply liked!");
   };
 
-  const handleShare = async () => {
-    const success = await copyToClipboard(window.location.href);
-    if (success) {
-      toast.success("Discussion link copied to clipboard!");
-    } else {
-      toast.error("Failed to copy link");
+  const handleShare = () => {
+    setIsShareDialogOpen(true);
+  };
+
+  const handleSaveDiscussion = async () => {
+    if (!user) {
+      toast.error("Please log in to save discussions");
+      return;
+    }
+
+    try {
+      if (isDiscussionSaved) {
+        // Unsave
+        const success = await unsaveDiscussion(user.id, discussionId);
+        if (success) {
+          setIsDiscussionSaved(false);
+          toast.success("Discussion removed from saved items");
+        } else {
+          toast.error("Failed to unsave discussion");
+        }
+      } else {
+        // Save
+        const success = await saveDiscussion(user.id, discussionId);
+        if (success) {
+          setIsDiscussionSaved(true);
+          toast.success("Discussion saved!");
+        } else {
+          toast.error("Failed to save discussion");
+        }
+      }
+    } catch (error) {
+      console.error("Error toggling save discussion:", error);
+      toast.error("Failed to update saved status");
     }
   };
 
@@ -361,10 +412,11 @@ export function DiscussionDetailsPage({
               <Button 
                 variant="ghost" 
                 size="sm" 
-                className="gap-2"
+                className={`gap-2 ${isDiscussionSaved ? 'text-primary' : ''}`}
+                onClick={handleSaveDiscussion}
               >
-                <Bookmark className="h-4 w-4" />
-                Save
+                <Bookmark className={`h-4 w-4 ${isDiscussionSaved ? 'fill-current' : ''}`} />
+                {isDiscussionSaved ? 'Saved' : 'Save'}
               </Button>
               <div className="flex-1"></div>
               <Button 
@@ -757,6 +809,15 @@ export function DiscussionDetailsPage({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Share Dialog */}
+      <ShareDialog 
+        open={isShareDialogOpen} 
+        onOpenChange={setIsShareDialogOpen}
+        title={discussion.title}
+        url={typeof window !== 'undefined' ? window.location.href : ''}
+        description={`Join the discussion about "${discussion.title}" on LitLens`}
+      />
     </div>
   );
 }

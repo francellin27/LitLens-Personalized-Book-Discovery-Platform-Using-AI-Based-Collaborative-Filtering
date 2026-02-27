@@ -1,5 +1,7 @@
 import { Book } from '../lib/bookData';
 import { BookCard } from './BookCard';
+import { Card } from './ui/card';
+import { BookOpen } from 'lucide-react';
 
 interface BookGridProps {
   books: Book[];
@@ -10,6 +12,8 @@ interface BookGridProps {
   viewMode?: "grid" | "list";
   showRemoveButton?: boolean;
   onRemoveBook?: (book: Book) => void;
+  loading?: boolean;
+  emptyMessage?: string;
 }
 
 export function BookGrid({ 
@@ -20,14 +24,27 @@ export function BookGrid({
   compact = false, 
   viewMode = "grid",
   showRemoveButton = false,
-  onRemoveBook 
+  onRemoveBook,
+  loading = false,
+  emptyMessage = "No books found matching your criteria."
 }: BookGridProps) {
   const handleBookClick = onBookSelect || onBookClick;
+  
+  if (loading) {
+    return (
+      <Card className="p-8 text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-3" />
+        <p className="text-muted-foreground">Loading books...</p>
+      </Card>
+    );
+  }
+  
   if (books.length === 0) {
     return (
-      <div className="text-center py-12">
-        <p className="text-muted-foreground">No books found matching your criteria.</p>
-      </div>
+      <Card className="p-8 text-center">
+        <BookOpen className="w-12 h-12 mx-auto mb-3 text-muted-foreground" />
+        <p className="text-muted-foreground">{emptyMessage}</p>
+      </Card>
     );
   }
 

@@ -195,6 +195,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }, 30000);
     
     try {
+      console.log('[Auth] Attempting sign in with email:', email);
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -203,7 +204,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       clearTimeout(timeoutId);
 
       if (error) {
-        setIsLoading(false);
+        console.log('[Auth] Login error:', error.message, 'Status:', error.status);
+        console.log('[Auth] Full error object:', JSON.stringify(error));
         
         // Check for connection errors - these should throw
         if (error.message?.includes('fetch') || error.name === 'AuthRetryableFetchError') {
@@ -216,22 +218,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
         
         // All other auth errors (invalid credentials, etc) - return false
-        // This avoids throwing for normal login failures
-        console.log('Authentication failed:', error.message);
+        // This includes "Invalid login credentials" from Supabase
+        console.log('[Auth] Authentication failed - returning false to show error dialog');
         return false;
       }
 
       if (data.user) {
+        console.log('[Auth] Login successful for:', data.user.email);
         // Don't manually set user here - let the onAuthStateChange listener handle it
         // This prevents race conditions and duplicate state updates
         return true;
       }
 
-      setIsLoading(false);
+      console.log('[Auth] No error but no user data - returning false');
       return false;
     } catch (error: any) {
       clearTimeout(timeoutId);
-      setIsLoading(false);
+      
+      console.log('[Auth] Exception caught:', error.message);
       
       // Only re-throw if it's one of our custom errors
       if (error.message === 'CONNECTION_ERROR' || error.message === 'EMAIL_NOT_CONFIRMED') {
@@ -239,8 +243,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
       
       // For unexpected errors, log and return false
-      console.error('Unexpected login error:', error);
+      console.error('[Auth] Unexpected login error:', error);
       return false;
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -251,22 +257,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
     name: string,
     username: string
   ): Promise<boolean> => {
+    // Set a timeout to prevent infinite loading (30 seconds for slower connections)
+    const timeoutId = setTimeout(() => {
+      if (process.env.NODE_ENV === 'development') {
+        console.debug('[Auth] Signup taking longer than expected, resetting loading state');
+      }
+      setIsLoading(false);
+    }, 30000);
+
     try {
       setIsLoading(true);
-
-      // Set a timeout to prevent infinite loading (30 seconds for slower connections)
-      const timeoutId = setTimeout(() => {
-        if (process.env.NODE_ENV === 'development') {
-          console.debug('[Auth] Signup taking longer than expected, resetting loading state');
-        }
-        setIsLoading(false);
-      }, 30000);
 
       // Check username availability first
       const isAvailable = await checkUsernameAvailability(username);
       if (!isAvailable) {
         clearTimeout(timeoutId);
-        setIsLoading(false);
         return false;
       }
 
@@ -286,7 +291,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       if (error) {
         console.error('Signup error:', error);
-        setIsLoading(false);
         // Throw error with message so UI can display it
         throw new Error(error.message || 'Signup failed');
       }
@@ -297,12 +301,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
         return true;
       }
 
-      setIsLoading(false);
       return false;
     } catch (error) {
+      clearTimeout(timeoutId);
       console.error('Signup error:', error);
-      setIsLoading(false);
       throw error; // Re-throw so Login component can catch it
+    } finally {
+      setIsLoading(false);
     }
   };
 

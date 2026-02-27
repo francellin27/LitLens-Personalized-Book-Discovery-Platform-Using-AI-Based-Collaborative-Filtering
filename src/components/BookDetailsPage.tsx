@@ -26,7 +26,9 @@ import {
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { toast } from 'sonner@2.0.3';
 import { copyToClipboard } from '../utils/clipboard';
-import { fetchBooks } from '../lib/supabase-services';
+import { supabase } from '../utils/supabase/client';
+import { useAuth } from '../lib/auth-supabase';
+import { submitUserRating, getUserBookStatus } from '../lib/supabase-services';
 
 interface BookDetailsPageProps {
   book: Book;
@@ -108,6 +110,7 @@ function ReviewCard({ review }: ReviewCardProps) {
 }
 
 export function BookDetailsPage({ book, onBack, onBookSelect }: BookDetailsPageProps) {
+  const { user } = useAuth();
   const [userRating, setUserRating] = useState(book?.userRating || 0);
   const [isFavorited, setIsFavorited] = useState(false);
   const [isInReadingList, setIsInReadingList] = useState(false);
@@ -115,6 +118,9 @@ export function BookDetailsPage({ book, onBack, onBookSelect }: BookDetailsPageP
   const [showAllReviews, setShowAllReviews] = useState(false);
   const [scrollY, setScrollY] = useState(0);
   const [similarBooks, setSimilarBooks] = useState<Book[]>([]);
+  const [currentBookRating, setCurrentBookRating] = useState(book.rating);
+  const [currentBookTotalRatings, setCurrentBookTotalRatings] = useState(book.totalRatings);
+  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
 
   // Handle scroll for dynamic header effects
   useEffect(() => {
@@ -123,60 +129,147 @@ export function BookDetailsPage({ book, onBack, onBookSelect }: BookDetailsPageP
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Load user's existing rating when book changes
+  useEffect(() => {
+    async function loadUserRating() {
+      if (!user?.id) return;
+      
+      const status = await getUserBookStatus(user.id, book.id);
+      if (status.userRating) {
+        setUserRating(status.userRating);
+        console.log('📊 Loaded user rating:', status.userRating);
+      } else {
+        setUserRating(0);
+      }
+    }
+    
+    loadUserRating();
+    
+    // Reset book rating to current values when book changes
+    setCurrentBookRating(book.rating);
+    setCurrentBookTotalRatings(book.totalRatings);
+  }, [user?.id, book.id, book.rating, book.totalRatings]);
+
   // Fetch similar books based on genre or author (excluding current book)
   useEffect(() => {
+    // Reset similar books immediately when book changes
+    setSimilarBooks([]);
+    
     async function loadSimilarBooks() {
       try {
         const currentBookId = book.id;
+        console.debug('[Similar Books] Loading for book:', book.title, 'ID:', currentBookId);
         
-        // First, try to find books by the same author (excluding current book)
-        const { books: sameAuthorBooks } = await fetchBooks({
-          author: book.author,
-          limit: 25
+        // Build OR conditions for each genre or author match
+        const orConditions: string[] = [];
+        
+        // Add author match condition
+        orConditions.push(`author.eq.${book.author}`);
+        
+        // Add genre match conditions (check if any genre in the array matches)
+        book.genre.forEach(genre => {
+          orConditions.push(`genre.cs.{${genre}}`); // cs = contains (for arrays)
         });
         
-        // IMPORTANT: Filter out the current book - never show the same book
-        const filteredSameAuthor = sameAuthorBooks.filter(b => b.id !== currentBookId);
+        // Fetch similar books using Supabase OR query
+        const { data, error } = await supabase
+          .from('books')
+          .select('*')
+          .or(orConditions.join(','))
+          .neq('id', currentBookId) // Exclude current book
+          .order('rating', { ascending: false })
+          .limit(3); // Show only 3 books
         
-        // If we have enough books from the same author, use those
-        if (filteredSameAuthor.length >= 6) {
-          setSimilarBooks(filteredSameAuthor.slice(0, 12));
+        if (error) {
+          console.error('[Similar Books] Error fetching from Supabase:', error);
+          setSimilarBooks([]);
           return;
         }
         
-        // Otherwise, also fetch books from the same genres
-        const genrePromises = book.genre.map(genre => 
-          fetchBooks({ genre, limit: 20 })
-        );
+        if (!data || data.length === 0) {
+          console.debug('[Similar Books] No similar books found');
+          setSimilarBooks([]);
+          return;
+        }
         
-        const genreResults = await Promise.all(genrePromises);
-        const allGenreBooks = genreResults.flatMap(result => result.books);
+        // Transform database books to Book interface
+        const similarBooksData = data.map(dbBook => ({
+          id: dbBook.id,
+          title: dbBook.title,
+          author: dbBook.author,
+          cover: dbBook.cover_url || '',
+          rating: dbBook.rating || 0,
+          totalRatings: dbBook.total_ratings || 0,
+          genre: dbBook.genre || [],
+          description: dbBook.description || '',
+          publishedYear: dbBook.published_year || 0,
+          pages: dbBook.pages || 0,
+          isbn: dbBook.isbn || '',
+          publisher: dbBook.publisher || '',
+          language: dbBook.language || 'English',
+          viewCount: dbBook.view_count || 0,
+          readCount: dbBook.read_count || 0,
+          length: dbBook.pages ? `${dbBook.pages} pages` : 'Unknown'
+        }));
         
-        // Combine same author books with genre matches
-        const combinedBooks = [...filteredSameAuthor, ...allGenreBooks];
+        console.debug('[Similar Books] Found', similarBooksData.length, 'similar books');
+        console.debug('[Similar Books] Titles:', similarBooksData.map(b => b.title).join(', '));
         
-        // Deduplicate by ID and ENSURE current book is excluded
-        const uniqueBooks = Array.from(
-          new Map(combinedBooks.map(b => [b.id, b])).values()
-        ).filter(b => b.id !== currentBookId);
-        
-        // Sort by rating to show best similar books first
-        uniqueBooks.sort((a, b) => b.rating - a.rating);
-        
-        // Set up to 12 similar books (all different from current book)
-        setSimilarBooks(uniqueBooks.slice(0, 12));
+        setSimilarBooks(similarBooksData);
       } catch (error) {
-        console.error('Error loading similar books:', error);
+        console.error('[Similar Books] Error loading similar books:', error);
         setSimilarBooks([]);
       }
     }
     
     loadSimilarBooks();
-  }, [book.id, book.author, book.genre]);
+  }, [book.id, book.author, JSON.stringify(book.genre)]); // Use JSON.stringify for array comparison
 
-  const handleRating = (rating: number) => {
+  const handleRating = async (rating: number) => {
+    if (!user?.id) {
+      toast.error('Please log in to rate this book');
+      return;
+    }
+    
+    console.log('🌟 [Rating] User clicked rating:', rating);
+    console.log('🌟 [Rating] Current book rating:', currentBookRating);
+    console.log('🌟 [Rating] Current total ratings:', currentBookTotalRatings);
+    
+    setIsSubmittingRating(true);
     setUserRating(rating);
-    toast.success(`You rated "${book.title}" ${rating} stars!`);
+    
+    try {
+      const result = await submitUserRating(user.id, book.id, rating);
+      
+      console.log('🌟 [Rating] Submit result:', result);
+      
+      if (!result.success) {
+        console.error('[Rating] Error submitting rating');
+        toast.error('Failed to submit rating');
+        setUserRating(0);
+      } else {
+        console.log('[Rating] Submitted rating successfully');
+        toast.success(`You rated "${book.title}" ${rating} stars!`);
+        
+        // Update book's rating and total ratings with the new values from the server
+        if (result.newAverageRating !== undefined) {
+          console.log('🌟 [Rating] Updating currentBookRating from', currentBookRating, 'to', result.newAverageRating);
+          setCurrentBookRating(result.newAverageRating);
+        }
+        if (result.totalRatings !== undefined) {
+          console.log('🌟 [Rating] Updating currentBookTotalRatings from', currentBookTotalRatings, 'to', result.totalRatings);
+          setCurrentBookTotalRatings(result.totalRatings);
+        }
+        
+        console.log('🌟 [Rating] State updated, component should re-render');
+      }
+    } catch (error) {
+      console.error('[Rating] Error handling rating:', error);
+      toast.error('An error occurred while rating');
+      setUserRating(0);
+    } finally {
+      setIsSubmittingRating(false);
+    }
   };
 
   const handleFavorite = () => {
@@ -374,14 +467,17 @@ export function BookDetailsPage({ book, onBack, onBookSelect }: BookDetailsPageP
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
                   Community Rating
+                  {isSubmittingRating && (
+                    <span className="ml-2 text-xs text-primary">(Updating...)</span>
+                  )}
                 </h3>
                 <div className="text-3xl font-bold text-primary">
-                  {book.rating.toFixed(1)}
+                  {currentBookRating.toFixed(1)}
                 </div>
               </div>
-              <StarRating rating={book.rating} size="lg" />
+              <StarRating rating={currentBookRating} size="lg" />
               <p className="text-sm text-muted-foreground">
-                Based on {book.totalRatings.toLocaleString()} ratings
+                Based on {currentBookTotalRatings.toLocaleString()} rating{currentBookTotalRatings !== 1 ? 's' : ''}
               </p>
             </div>
 
@@ -393,7 +489,7 @@ export function BookDetailsPage({ book, onBack, onBookSelect }: BookDetailsPageP
               <div className="flex items-center gap-4">
                 <StarRating 
                   rating={userRating} 
-                  interactive
+                  interactive={!isSubmittingRating}
                   size="lg"
                   onRate={handleRating}
                 />
@@ -404,7 +500,12 @@ export function BookDetailsPage({ book, onBack, onBookSelect }: BookDetailsPageP
                 )}
               </div>
               <p className="text-sm text-muted-foreground">
-                {userRating > 0 ? 'Thanks for rating!' : 'Tap stars to rate this book'}
+                {isSubmittingRating 
+                  ? 'Submitting your rating...' 
+                  : userRating > 0 
+                    ? 'Thanks for rating!' 
+                    : 'Click on the stars to rate this book'
+                }
               </p>
             </div>
           </Section>
@@ -530,48 +631,80 @@ export function BookDetailsPage({ book, onBack, onBookSelect }: BookDetailsPageP
               <div className="relative -mx-4">
                 <div className="overflow-x-auto px-4 pb-2 scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent">
                   <div className="flex gap-4" style={{ width: 'max-content' }}>
-                    {similarBooks.filter(sb => sb.id !== book.id).map((similarBook) => (
-                      <div
-                        key={similarBook.id}
-                        className="group cursor-pointer flex-shrink-0 w-32 sm:w-40"
-                        onClick={() => {
-                          if (onBookSelect) {
-                            onBookSelect(similarBook);
-                            window.scrollTo({ top: 0, behavior: 'instant' });
-                          }
-                        }}
-                      >
-                        <div className="space-y-2">
-                          <div className="relative aspect-[2/3] rounded-lg overflow-hidden shadow-md group-hover:shadow-xl transition-shadow duration-200">
-                            <ImageWithFallback
-                              src={similarBook.cover}
-                              alt={similarBook.title}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                            />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
-                            <div className="absolute bottom-2 left-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                              <div className="flex items-center gap-1 text-white text-xs">
-                                <StarRating rating={similarBook.rating} size="sm" readonly />
-                                <span className="ml-1">{similarBook.rating.toFixed(1)}</span>
-                              </div>
+                    {similarBooks.map((similarBook) => {
+                      // CRITICAL CHECK: Ensure we NEVER show the current book
+                      if (similarBook.id === book.id) {
+                        console.error('[Similar Books - RENDER] Current book found, skipping:', similarBook.title);
+                        console.error('[Similar Books - RENDER] Current:', book.id, 'vs Similar:', similarBook.id);
+                        return null;
+                      }
+                      
+                      // Additional safety: Check title and author match
+                      if (similarBook.title === book.title && similarBook.author === book.author) {
+                        console.warn('[Similar Books - RENDER] Same title+author, skipping:', similarBook.title);
+                        return null;
+                      }
+                      
+                      return (
+                        <div
+                          key={similarBook.id}
+                          className="group cursor-pointer flex-shrink-0 w-32 sm:w-40"
+                          onClick={() => {
+                            console.debug('[Similar Books] Clicked on:', similarBook.title);
+                            if (onBookSelect) {
+                              onBookSelect(similarBook);
+                              window.scrollTo({ top: 0, behavior: 'instant' });
+                            }
+                          }}
+                        >
+                          <div className="space-y-2">
+                            {/* Book Cover */}
+                            <div className="relative aspect-[2/3] rounded-lg overflow-hidden shadow-md group-hover:shadow-xl transition-shadow duration-200">
+                              <ImageWithFallback
+                                src={similarBook.cover}
+                                alt={similarBook.title}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                            </div>
+                            
+                            {/* Book Info */}
+                            <div className="space-y-1">
+                              {/* Title */}
+                              <p className="text-sm line-clamp-2 leading-tight group-hover:text-primary transition-colors">
+                                {similarBook.title}
+                              </p>
+                              
+                              {/* Author */}
+                              <p className="text-xs text-muted-foreground line-clamp-1">
+                                {similarBook.author}
+                              </p>
+                              
+                              {/* Rating - Always Visible */}
+                              {similarBook.rating && (
+                                <div className="flex items-center gap-1">
+                                  <StarRating rating={similarBook.rating} size="sm" readonly />
+                                  <span className="text-xs text-muted-foreground ml-0.5">
+                                    {similarBook.rating.toFixed(1)}
+                                  </span>
+                                </div>
+                              )}
+                              
+                              {/* Genre Tag - Shows "Same Author" or matching genre */}
+                              {similarBook.author.toLowerCase() === book.author.toLowerCase() ? (
+                                <Badge variant="outline" className="text-xs px-1.5 py-0 bg-primary/10 border-primary/30">
+                                  Same Author
+                                </Badge>
+                              ) : similarBook.genre.some(g => book.genre.includes(g)) && (
+                                <Badge variant="outline" className="text-xs px-1.5 py-0">
+                                  {similarBook.genre.find(g => book.genre.includes(g))}
+                                </Badge>
+                              )}
                             </div>
                           </div>
-                          <div className="space-y-1">
-                            <p className="text-sm line-clamp-2 leading-tight group-hover:text-primary transition-colors">
-                              {similarBook.title}
-                            </p>
-                            <p className="text-xs text-muted-foreground line-clamp-1">
-                              {similarBook.author}
-                            </p>
-                            {similarBook.genre.some(g => book.genre.includes(g)) && (
-                              <Badge variant="outline" className="text-xs px-1.5 py-0">
-                                {similarBook.genre.find(g => book.genre.includes(g))}
-                              </Badge>
-                            )}
-                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
                 

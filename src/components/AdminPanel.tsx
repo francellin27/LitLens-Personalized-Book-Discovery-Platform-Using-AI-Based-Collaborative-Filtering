@@ -76,6 +76,9 @@ export function AdminPanel({}: AdminPanelProps) {
   const [isLoadingReports, setIsLoadingReports] = useState(true);
   const [lastUserUpdate, setLastUserUpdate] = useState<Date>(new Date());
   
+  // Search state
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  
   // Analytics data state
   const [analyticsData, setAnalyticsData] = useState<{
     booksGrowth: BookGrowthData[];
@@ -366,6 +369,32 @@ export function AdminPanel({}: AdminPanelProps) {
     console.log('👑 Transformed Admins for Table:', transformed.map(a => ({ name: a.name, booksRead: a.booksRead })));
     return transformed;
   }, [admins]);
+
+  // Filter users based on search query
+  const filteredUsers = useMemo(() => {
+    if (!userSearchQuery.trim()) {
+      return transformedUsers;
+    }
+    
+    const query = userSearchQuery.toLowerCase();
+    return transformedUsers.filter(user => 
+      user.name.toLowerCase().includes(query) ||
+      user.email.toLowerCase().includes(query)
+    );
+  }, [transformedUsers, userSearchQuery]);
+
+  // Filter admins based on search query
+  const filteredAdmins = useMemo(() => {
+    if (!userSearchQuery.trim()) {
+      return transformedAdmins;
+    }
+    
+    const query = userSearchQuery.toLowerCase();
+    return transformedAdmins.filter(admin => 
+      admin.name.toLowerCase().includes(query) ||
+      admin.email.toLowerCase().includes(query)
+    );
+  }, [transformedAdmins, userSearchQuery]);
 
   // Calculate time ago for discussions
   const getTimeAgo = (dateString: string) => {
@@ -2148,10 +2177,31 @@ export function AdminPanel({}: AdminPanelProps) {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Search users..."
+              placeholder="Search by name or email..."
               className="pl-10 text-sm"
+              value={userSearchQuery}
+              onChange={(e) => setUserSearchQuery(e.target.value)}
             />
+            {userSearchQuery && (
+              <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 hover:bg-transparent"
+                  onClick={() => setUserSearchQuery('')}
+                >
+                  <X className="w-4 h-4 text-muted-foreground hover:text-foreground" />
+                </Button>
+              </div>
+            )}
           </div>
+
+          {/* Search Results Count */}
+          {userSearchQuery && (
+            <div className="text-xs text-muted-foreground">
+              Found {filteredUsers.length} user{filteredUsers.length !== 1 ? 's' : ''} and {filteredAdmins.length} admin{filteredAdmins.length !== 1 ? 's' : ''}
+            </div>
+          )}
 
           {/* Nested Tabs to match Manage Books structure */}
           <Tabs defaultValue="all-users" className="w-full">
@@ -2169,9 +2219,10 @@ export function AdminPanel({}: AdminPanelProps) {
                 <CardContent style={{ padding: '0', flex: '1', overflow: 'hidden' }}>
                   <div className="overflow-x-auto h-full">
                     <UserManagementTable
-                      users={transformedUsers}
+                      users={filteredUsers}
                       onEditUser={handleManageUser}
                       type="users"
+                      searchQuery={userSearchQuery}
                     />
                   </div>
                 </CardContent>
@@ -2184,10 +2235,11 @@ export function AdminPanel({}: AdminPanelProps) {
             <CardContent style={{ padding: '0', flex: '1', overflow: 'hidden' }}>
               <div className="overflow-x-auto h-full">
                 <UserManagementTable
-                  users={transformedAdmins}
+                  users={filteredAdmins}
                   onEditUser={handleEditAdmin}
                   onDeleteUser={handleDemoteFromAdmin}
                   type="admins"
+                  searchQuery={userSearchQuery}
                 />
               </div>
             </CardContent>

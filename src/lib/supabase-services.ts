@@ -1,5 +1,6 @@
 // Supabase service layer for LitLens
 import { supabase } from '../utils/supabase/client';
+import { projectId, publicAnonKey } from '../utils/supabase/info';
 import type { Book, Review } from './bookData';
 
 // ============ BOOKS SERVICE ============
@@ -15,6 +16,7 @@ export async function fetchBooks(options?: {
   sortOrder?: 'asc' | 'desc';
   limit?: number;
   offset?: number;
+  excludeId?: string; // NEW: Exclude a specific book ID (useful for similar books)
 }): Promise<{ books: Book[]; total: number }> {
   try {
     let query = supabase.from('books').select('*', { count: 'exact' });
@@ -44,6 +46,11 @@ export async function fetchBooks(options?: {
       query = query.or(
         `title.ilike.%${options.searchQuery}%,author.ilike.%${options.searchQuery}%,description.ilike.%${options.searchQuery}%`
       );
+    }
+
+    // NEW: Exclude specific book ID
+    if (options?.excludeId) {
+      query = query.neq('id', options.excludeId);
     }
 
     // Apply sorting
@@ -470,6 +477,81 @@ export async function removeUserBookStatus(
   } catch (error) {
     console.error('Error removing user book status:', error);
     return false;
+  }
+}
+
+/**
+ * Submit or update a user's rating for a book
+ * This will recalculate the book's average rating
+ */
+export async function submitUserRating(
+  userId: string,
+  bookId: string,
+  rating: number
+): Promise<{ success: boolean; newAverageRating?: number; totalRatings?: number }> {
+  try {
+    console.log('📊 Submitting rating:', { userId, bookId, rating });
+
+    // Step 1: Update or insert the user's rating in user_book_status
+    // Use 'completed' status as default when rating a book
+    const { error: upsertError } = await supabase
+      .from('user_book_status')
+      .upsert({
+        user_id: userId,
+        book_id: bookId,
+        status: 'completed',
+        user_rating: rating,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_id,book_id,status',
+        ignoreDuplicates: false
+      });
+
+    if (upsertError) {
+      console.error('Error upserting user rating:', upsertError);
+      return { success: false };
+    }
+
+    // Step 2: Recalculate the book's average rating
+    const { data: allRatings, error: fetchError } = await supabase
+      .from('user_book_status')
+      .select('user_rating')
+      .eq('book_id', bookId)
+      .not('user_rating', 'is', null);
+
+    if (fetchError) {
+      console.error('Error fetching ratings for average:', fetchError);
+      return { success: false };
+    }
+
+    // Calculate new average
+    const ratings = allRatings || [];
+    const totalRatings = ratings.length;
+    const sumRatings = ratings.reduce((sum, r) => sum + (r.user_rating || 0), 0);
+    const newAverageRating = totalRatings > 0 ? sumRatings / totalRatings : 0;
+
+    console.log('📊 Calculated average:', { totalRatings, newAverageRating });
+
+    // Step 3: Update the book's rating and total_ratings
+    const { error: updateError } = await supabase
+      .from('books')
+      .update({
+        rating: newAverageRating,
+        total_ratings: totalRatings,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', bookId);
+
+    if (updateError) {
+      console.error('Error updating book rating:', updateError);
+      return { success: false };
+    }
+
+    console.log('✅ Rating submitted successfully:', { newAverageRating, totalRatings });
+    return { success: true, newAverageRating, totalRatings };
+  } catch (error) {
+    console.error('Error submitting user rating:', error);
+    return { success: false };
   }
 }
 
@@ -1596,6 +1678,127 @@ export async function deleteDiscussionReport(reportId: string): Promise<boolean>
   } catch (error) {
     console.error('Error deleting discussion report:', error);
     return false;
+  }
+}
+
+// ============ SAVED DISCUSSIONS SERVICE ============
+
+export async function saveDiscussion(
+  userId: string,
+  discussionId: string
+): Promise<boolean> {
+  try {
+    const response = await fetch(
+      `https://${projectId}.supabase.co/functions/v1/make-server-25845558/discussions/${discussionId}/save`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${publicAnonKey}`
+        },
+        body: JSON.stringify({ userId })
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('Error saving discussion:', error);
+      return false;
+    }
+
+    const data = await response.json();
+    return data.success;
+  } catch (error) {
+    console.error('Error saving discussion:', error);
+    return false;
+  }
+}
+
+export async function unsaveDiscussion(
+  userId: string,
+  discussionId: string
+): Promise<boolean> {
+  try {
+    const response = await fetch(
+      `https://${projectId}.supabase.co/functions/v1/make-server-25845558/discussions/${discussionId}/save`,
+      {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${publicAnonKey}`
+        },
+        body: JSON.stringify({ userId })
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('Error unsaving discussion:', error);
+      return false;
+    }
+
+    const data = await response.json();
+    return data.success;
+  } catch (error) {
+    console.error('Error unsaving discussion:', error);
+    return false;
+  }
+}
+
+export async function checkIfDiscussionSaved(
+  userId: string,
+  discussionId: string
+): Promise<boolean> {
+  try {
+    const response = await fetch(
+      `https://${projectId}.supabase.co/functions/v1/make-server-25845558/discussions/${discussionId}/saved/${userId}`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${publicAnonKey}`
+        }
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('Error checking if discussion is saved:', error);
+      return false;
+    }
+
+    const data = await response.json();
+    return data.isSaved;
+  } catch (error) {
+    console.error('Error checking if discussion is saved:', error);
+    return false;
+  }
+}
+
+export async function fetchSavedDiscussions(userId: string): Promise<Discussion[]> {
+  try {
+    const response = await fetch(
+      `https://${projectId}.supabase.co/functions/v1/make-server-25845558/discussions/saved/${userId}`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${publicAnonKey}`
+        }
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('Error fetching saved discussions:', error);
+      return [];
+    }
+
+    const data = await response.json();
+    return data.discussions || [];
+  } catch (error) {
+    console.error('Error fetching saved discussions:', error);
+    return [];
   }
 }
 
